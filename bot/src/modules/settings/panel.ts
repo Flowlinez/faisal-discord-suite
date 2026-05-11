@@ -3,51 +3,48 @@ import { getGuildSettings } from "../../db/settings.js";
 import { buildEmbed } from "../../ui/embeds.js";
 import { setupPanelRows } from "../../ui/components.js";
 import { Palette } from "../../utils/colors.js";
+import { L } from "../../utils/locale.js";
 
 export async function renderSetupPanel(guild: Guild) {
   const s = getGuildSettings(guild.id);
-  const rec = s.record_channel_id ? `<#${s.record_channel_id}>` : "غير محدد";
-  const pin = s.pin_channel_id ? `<#${s.pin_channel_id}>` : "غير محدد";
+  const rec = s.record_channel_id ? `<#${s.record_channel_id}>` : "غير محدد | Not set";
+  const pin = s.pin_channel_id ? `<#${s.pin_channel_id}>` : "غير محدد | Not set";
   const region = s.target_region ?? "Automatic";
 
   const embed = buildEmbed({
-    title: `⚙️ إعدادات ${guild.name}`,
-    description:
-      "اضبط القنوات و الـ Region و الـ Buffer من القوائم والأزرار في الأسفل ↓\n" +
-      "كل تغيير يُحفظ تلقائياً.",
+    title: `⚙️ ${L.setupTitle(guild.name)}`,
+    description: L.setupDesc,
     color: Palette.accent,
     fields: [
       {
-        name: "📺 القنوات",
+        name: "📺 القنوات | Channels",
         value: [
-          `قناة لوحة التسجيل: ${rec}`,
-          `روم التثبيت 24/7: ${pin}`,
+          `قناة التسجيل | Recording: ${rec}`,
+          `روم التثبيت 24/7 | Pin: ${pin}`,
         ].join("\n"),
         inline: false,
       },
       {
-        name: "🌍 Region",
-        value: `الافتراضي: \`${region}\`\nAuto-Region: ${
-          s.auto_region ? "مفعّل ✅" : "مغلق ⚪"
-        }`,
+        name: "🌍 الريجون | Region",
+        value: `الافتراضي | Default: \`${region}\`\n${L.autoRegionLabel(!!s.auto_region)}`,
         inline: true,
       },
       {
-        name: "📌 التثبيت",
-        value: `Auto-Pin: ${s.auto_pin ? "مفعّل ✅" : "مغلق ⚪"}`,
+        name: "📌 التثبيت | Pin",
+        value: L.autoPinLabel(!!s.auto_pin),
         inline: true,
       },
       {
-        name: "🎞️ الـ Clip / Buffer",
+        name: "🎞️ كليب / بافر | Clip / Buffer",
         value: [
-          `Clip افتراضي: **${s.default_duration_minutes}** دقيقة`,
-          `Buffer كبير: **${s.max_buffer_minutes}** دقيقة`,
-          `جودة الرندر: **${s.render_quality}**`,
+          `المدة | Duration: **${s.default_duration_minutes}** دقيقة | min`,
+          `البافر | Buffer: **${s.max_buffer_minutes}** دقيقة | min`,
+          `الجودة | Quality: **${s.render_quality}**`,
         ].join("\n"),
         inline: false,
       },
     ],
-    footer: { text: "Faisal Suite • Liquid Glass Edition" },
+    footer: { text: "✦" },
   });
 
   return {

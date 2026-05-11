@@ -8,7 +8,7 @@ import { initStayConnected } from "./modules/stayConnected/index.js";
 import { ensureCompanion } from "./modules/companion/client.js";
 
 async function main(): Promise<void> {
-  logger.info("starting Faisal Discord Suite bot…");
+  logger.info("starting bot…");
   db(); // initialize sqlite + run migrations
 
   const client = createClient();

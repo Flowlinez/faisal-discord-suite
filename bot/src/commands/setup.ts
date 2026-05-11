@@ -10,7 +10,7 @@ import { renderSetupPanel } from "../modules/settings/panel.js";
 export const setupCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("setup")
-    .setDescription("لوحة إعدادات البوت الكاملة")
+    .setDescription("لوحة الإعدادات الكاملة | Full settings panel")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild.toString())
     .setDMPermission(false),
   async execute(interaction: ChatInputCommandInteraction) {

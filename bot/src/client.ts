@@ -46,7 +46,7 @@ export function createClient(): Client {
       status: "online",
       activities: [
         {
-          name: "Faisal Suite",
+          name: "✦",
           type: ActivityType.Streaming,
           url: "https://twitch.tv/discord", // any valid twitch URL activates the purple "streaming" indicator
         },

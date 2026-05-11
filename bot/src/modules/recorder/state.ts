@@ -29,6 +29,9 @@ export interface ActiveSession {
   voice: VoiceSession;
   buffer: RollingBuffer;
   timeline: EventTimeline;
+  paused: boolean;
+  pausedAt: number | null;
+  totalPausedMs: number;
 }
 
 class RecordingManager {
@@ -76,6 +79,9 @@ class RecordingManager {
       voice,
       buffer,
       timeline,
+      paused: false,
+      pausedAt: null,
+      totalPausedMs: 0,
     };
     this.sessions.set(args.channel.guildId, session);
 
@@ -165,6 +171,36 @@ class RecordingManager {
     return s.buffer.listUsers();
   }
 
+  /** Pause an active recording (voice capture continues but we mark frames as paused). */
+  pause(guildId: string): boolean {
+    const s = this.sessions.get(guildId);
+    if (!s || s.paused) return false;
+    s.paused = true;
+    s.pausedAt = Date.now();
+    log.info({ guild: guildId }, "recording paused");
+    return true;
+  }
+
+  /** Resume a paused recording. */
+  resume(guildId: string): boolean {
+    const s = this.sessions.get(guildId);
+    if (!s || !s.paused || !s.pausedAt) return false;
+    s.totalPausedMs += Date.now() - s.pausedAt;
+    s.paused = false;
+    s.pausedAt = null;
+    log.info({ guild: guildId }, "recording resumed");
+    return true;
+  }
+
+  /** Get the effective recording duration (excluding paused time). */
+  effectiveDuration(guildId: string): number {
+    const s = this.sessions.get(guildId);
+    if (!s) return 0;
+    const totalMs = Date.now() - s.startedAt;
+    const pausedMs = s.paused && s.pausedAt ? s.totalPausedMs + (Date.now() - s.pausedAt) : s.totalPausedMs;
+    return Math.max(0, Math.floor((totalMs - pausedMs) / 1000));
+  }
+
   /** Force the bot to remain in the channel by attempting a rejoin if disconnected. */
   async ensureJoined(guild: Guild, channelId: string, startedBy: string): Promise<void> {
     if (this.sessions.has(guild.id)) return;
@@ -172,6 +208,38 @@ class RecordingManager {
     if (!channel || !channel.isVoiceBased()) return;
     await this.start({ channel, startedBy });
   }
+
+  /** Cleanup old recording directories older than `maxAgeDays`. */
+  cleanupOldRecordings(maxAgeDays = 7): number {
+    let cleaned = 0;
+    const recDir = env.RECORDINGS_DIR;
+    if (!fs.existsSync(recDir)) return 0;
+    const cutoff = Date.now() - maxAgeDays * 24 * 60 * 60 * 1000;
+    try {
+      for (const guildDir of fs.readdirSync(recDir)) {
+        const guildPath = path.join(recDir, guildDir);
+        if (!fs.statSync(guildPath).isDirectory()) continue;
+        for (const sessionDir of fs.readdirSync(guildPath)) {
+          const sessionPath = path.join(guildPath, sessionDir);
+          try {
+            const stat = fs.statSync(sessionPath);
+            if (stat.isDirectory() && stat.mtimeMs < cutoff) {
+              fs.rmSync(sessionPath, { recursive: true, force: true });
+              cleaned++;
+            }
+          } catch { /* skip */ }
+        }
+      }
+    } catch (err) {
+      log.warn({ err }, "cleanup error");
+    }
+    if (cleaned > 0) log.info({ cleaned }, "old recordings cleaned up");
+    return cleaned;
+  }
 }
 
 export const recordingManager = new RecordingManager();
+
+// Auto-cleanup old recordings on startup and every 6 hours
+recordingManager.cleanupOldRecordings(7);
+setInterval(() => recordingManager.cleanupOldRecordings(7), 6 * 60 * 60 * 1000);

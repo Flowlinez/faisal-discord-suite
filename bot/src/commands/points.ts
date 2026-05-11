@@ -10,11 +10,11 @@ import { Palette } from "../utils/colors.js";
 export const pointsCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("points")
-    .setDescription("عرض نقاطك في XO")
+    .setDescription("عرض نقاطك في الألعاب | View your game scores")
     .setDMPermission(false)
-    .addUserOption((o) => o.setName("user").setDescription("شخص معين"))
+    .addUserOption((o) => o.setName("user").setDescription("شخص معين | Specific user"))
     .addBooleanOption((o) =>
-      o.setName("leaderboard").setDescription("عرض المتصدّرين")
+      o.setName("leaderboard").setDescription("عرض المتصدّرين | Show leaderboard")
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!interaction.guild) return;
@@ -22,19 +22,21 @@ export const pointsCommand: SlashCommand = {
     const leaderboard = interaction.options.getBoolean("leaderboard") ?? false;
     if (leaderboard) {
       const rows = getLeaderboard(interaction.guild.id, 10);
+      const medals = ["🥇", "🥈", "🥉"];
       const lines = await Promise.all(
         rows.map(async (r, i) => {
           const m = await interaction.guild!.members.fetch(r.user_id).catch(() => null);
           const name = m?.displayName ?? `<@${r.user_id}>`;
-          return `**${i + 1}.** ${name} — ${r.round_wins} جولة (${r.match_wins} مباراة)`;
+          const medal = medals[i] ?? `**${i + 1}.**`;
+          return `${medal} ${name} — ${r.round_wins} جولة | rounds (${r.match_wins} مباراة | matches)`;
         })
       );
       await interaction.reply({
         embeds: [
           buildEmbed({
-            title: "متصدّري XO",
-            description: lines.length > 0 ? lines.join("\n") : "ما فيه نقاط بعد.",
-            color: Palette.accent,
+            title: "🏆 المتصدّرون | Leaderboard",
+            description: lines.length > 0 ? lines.join("\n") : "ما فيه نقاط بعد | No scores yet.",
+            color: Palette.gold,
           }),
         ],
       });
@@ -46,14 +48,14 @@ export const pointsCommand: SlashCommand = {
     await interaction.reply({
       embeds: [
         buildEmbed({
-          title: `نقاط ${target.username}`,
+          title: `📊 نقاط ${target.username} | ${target.username}'s Scores`,
           thumbnail: target.displayAvatarURL({ size: 128, extension: "png" }),
-          description: [
-            `**جولات فائزة:** ${p.round_wins}`,
-            `**مباريات فائزة:** ${p.match_wins}`,
-            `**تعادلات:** ${p.draws}`,
-            `**خسائر:** ${p.losses}`,
-          ].join("\n"),
+          fields: [
+            { name: "🏅 جولات فائزة | Round Wins", value: `${p.round_wins}`, inline: true },
+            { name: "🏆 مباريات فائزة | Match Wins", value: `${p.match_wins}`, inline: true },
+            { name: "🤝 تعادلات | Draws", value: `${p.draws}`, inline: true },
+            { name: "💔 خسائر | Losses", value: `${p.losses}`, inline: true },
+          ],
           color: Palette.accent,
         }),
       ],

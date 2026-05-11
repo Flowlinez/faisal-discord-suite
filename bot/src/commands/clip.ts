@@ -7,17 +7,18 @@ import {
 import type { SlashCommand } from "../client.js";
 import { recordingManager } from "../modules/recorder/state.js";
 import { errorEmbed, successEmbed } from "../ui/embeds.js";
+import { L } from "../utils/locale.js";
 
 export const clipCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("clip")
-    .setDescription("احفظ Clip من آخر فترة (الافتراضي 5 دقايق)")
+    .setDescription("احفظ كليب من آخر فترة | Save a clip from recent buffer")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages.toString())
     .setDMPermission(false)
     .addIntegerOption((o) =>
       o
         .setName("minutes")
-        .setDescription("عدد الدقايق (1-60)")
+        .setDescription("عدد الدقايق | Minutes (1-60)")
         .setMinValue(1)
         .setMaxValue(60)
     ),
@@ -27,15 +28,14 @@ export const clipCommand: SlashCommand = {
     const session = recordingManager.get(interaction.guild.id);
     if (!session) {
       await interaction.reply({
-        embeds: [errorEmbed("ابدأ التسجيل أولاً (`/record start`).")],
+        embeds: [errorEmbed(L.recNoActiveClip)],
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
     await interaction.reply({
-      embeds: [successEmbed(`جاري تجهيز Clip لآخر ${minutes} دقيقة — استخدم زر Clip من اللوحة لإصدار رسمي مع ثريد ✨`)],
+      embeds: [successEmbed(L.recPreparingClip(minutes))],
       flags: MessageFlags.Ephemeral,
     });
-    // Note: For a clean implementation, button paths produce the thread + render.
   },
 };

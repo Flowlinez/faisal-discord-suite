@@ -28,31 +28,52 @@ export function buildEmbed(args: BasicEmbedArgs): EmbedBuilder {
   if (args.image) e.setImage(args.image);
   if (args.author) e.setAuthor(args.author);
   if (args.footer) e.setFooter(args.footer);
+  else e.setFooter({ text: "✦" });
   if (args.url) e.setURL(args.url);
   if (args.timestamp) e.setTimestamp(new Date());
   return e;
 }
 
-export function successEmbed(text: string, title = "تم"): EmbedBuilder {
+export function successEmbed(text: string, title = "تم بنجاح | Success"): EmbedBuilder {
   return buildEmbed({
-    title,
+    title: `✅ ${title}`,
     description: text,
     color: Palette.success,
+    timestamp: true,
   });
 }
 
-export function errorEmbed(text: string, title = "خطأ"): EmbedBuilder {
+export function errorEmbed(text: string, title = "خطأ | Error"): EmbedBuilder {
   return buildEmbed({
-    title,
+    title: `❌ ${title}`,
     description: text,
     color: Palette.danger,
+    timestamp: true,
   });
 }
 
 export function infoEmbed(text: string, title?: string): EmbedBuilder {
   return buildEmbed({
-    title,
+    title: title ? `ℹ️ ${title}` : undefined,
     description: text,
-    color: Palette.accent,
+    color: Palette.info,
+  });
+}
+
+export function warnEmbed(text: string, title = "تنبيه | Warning"): EmbedBuilder {
+  return buildEmbed({
+    title: `⚠️ ${title}`,
+    description: text,
+    color: Palette.warn,
+    timestamp: true,
+  });
+}
+
+export function gameEmbed(text: string, title: string, color?: number): EmbedBuilder {
+  return buildEmbed({
+    title: `🎮 ${title}`,
+    description: text,
+    color: color ?? Palette.purple,
+    timestamp: true,
   });
 }

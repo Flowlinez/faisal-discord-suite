@@ -15,11 +15,12 @@ import {
   matchWinner,
   type Game,
 } from "./game.js";
-import { destroyLobby, getLobby, joinLobby, lobbyRow } from "./lobby.js";
+import { destroyLobby, getLobby, joinLobby } from "./lobby.js";
 import { renderBoard } from "./board.js";
 import { addDraw, addLoss, addMatchWin, addRoundWin, getUserPoints } from "../../db/points.js";
 import { errorEmbed, successEmbed, buildEmbed } from "../../ui/embeds.js";
 import { Palette } from "../../utils/colors.js";
+import { L } from "../../utils/locale.js";
 import { logger } from "../../utils/logger.js";
 
 const log = logger.child({ mod: "xo-router" });
@@ -43,7 +44,7 @@ async function joinBtn(interaction: ButtonInteraction, lobbyId: string): Promise
   const lobby = getLobby(lobbyId);
   if (!lobby) {
     await interaction.reply({
-      embeds: [errorEmbed("اللوبي ما عاد موجود.")],
+      embeds: [errorEmbed("اللوبي انتهى | Lobby expired.")],
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -88,8 +89,8 @@ async function joinBtn(interaction: ButtonInteraction, lobbyId: string): Promise
     content: `<@${game.playerX.userId}> 🆚 <@${game.playerO.userId}>`,
     embeds: [
       buildEmbed({
-        title: "XO — بدأت اللعبة",
-        description: `الجولة ${game.currentRound} من ${game.totalRounds}`,
+        title: `🎮 ${L.xoStarted}`,
+        description: `${L.xoRound(game.currentRound, game.totalRounds)}`,
         color: Palette.accent,
       }),
     ],
@@ -101,7 +102,7 @@ async function joinBtn(interaction: ButtonInteraction, lobbyId: string): Promise
 async function cancelBtn(interaction: ButtonInteraction, id: string): Promise<void> {
   destroyLobby(id);
   await interaction.update({
-    content: "تم إلغاء اللعبة.",
+    content: "تم إلغاء اللعبة | Game cancelled.",
     embeds: [],
     components: [],
   });
@@ -115,7 +116,7 @@ async function cellBtn(
   const before = getGame(gameId);
   if (!before) {
     await interaction.reply({
-      embeds: [errorEmbed("اللعبة ما عادت موجودة.")],
+      embeds: [errorEmbed("اللعبة غير موجودة | Game not found.")],
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -123,7 +124,7 @@ async function cellBtn(
   const result = makeMove(gameId, interaction.user.id, cellIdx);
   if (!result.ok || !result.game) {
     await interaction.reply({
-      embeds: [errorEmbed(result.reason ?? "حركة غير صالحة.")],
+      embeds: [errorEmbed(result.reason ?? "حركة غير صالحة | Invalid move.")],
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -149,13 +150,13 @@ async function cellBtn(
   if (game.status === "finished") {
     const mw = matchWinner(game);
     if (mw === "draw") {
-      winnerLabel = "تعادل بدون فايز";
+      winnerLabel = L.xoMatchDraw;
       addDraw(game.guildId, [game.playerX.userId, game.playerO.userId]);
     } else if (mw === "X") {
-      winnerLabel = `الفائز: ${game.playerX.name}`;
+      winnerLabel = L.xoWinner(game.playerX.name);
       addMatchWin(game.guildId, game.playerX.userId);
     } else if (mw === "O") {
-      winnerLabel = `الفائز: ${game.playerO.name}`;
+      winnerLabel = L.xoWinner(game.playerO.name);
       addMatchWin(game.guildId, game.playerO.userId);
     }
   }
@@ -177,12 +178,12 @@ async function cellBtn(
   await interaction.update({
     embeds: [
       buildEmbed({
-        title: game.status === "finished" ? "انتهت اللعبة" : "XO",
+        title: game.status === "finished" ? `🏆 ${L.xoFinished}` : `🎮 XO — ${L.xoRound(game.currentRound, game.totalRounds)}`,
         description:
           game.status === "finished"
-            ? winnerLabel ?? "انتهت اللعبة"
-            : `دور ${game.turn === "X" ? game.playerX.name : game.playerO.name}`,
-        color: Palette.accent,
+            ? winnerLabel ?? L.xoFinished
+            : L.xoTurn(game.turn === "X" ? game.playerX.name : game.playerO.name),
+        color: game.status === "finished" ? Palette.gold : Palette.accent,
       }),
     ],
     files: [new AttachmentBuilder(buf).setName("xo.png")],
@@ -191,7 +192,7 @@ async function cellBtn(
 
   if (game.status === "finished") {
     await interaction.followUp({
-      embeds: [successEmbed("شكراً لكم — استخدموا `/نقاطي` لمشاهدة نقاطكم.")],
+      embeds: [successEmbed(L.xoPointsHint)],
     });
   }
 }

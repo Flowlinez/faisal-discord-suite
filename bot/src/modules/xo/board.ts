@@ -37,7 +37,7 @@ export async function renderBoard(args: RenderBoardArgs): Promise<Buffer> {
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
 
-  // Background gradient (Liquid Glass)
+  // Background gradient
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, "#eef3fb");
   bg.addColorStop(1, "#dde6f3");

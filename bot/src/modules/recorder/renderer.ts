@@ -14,7 +14,6 @@ const ffmpegPath = ffmpegPathModule as unknown as string | null;
 if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
 const log = logger.child({ mod: "renderer" });
 
-// Try to register an Arabic-capable font if available.
 try {
   const candidates = [
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -27,9 +26,7 @@ try {
       break;
     }
   }
-} catch {
-  /* ignore — canvas will fall back */
-}
+} catch { /* ignore */ }
 
 export interface UserAudio {
   userId: string;
@@ -41,7 +38,7 @@ export interface UserAudio {
 
 export interface RenderArgs {
   outDir: string;
-  outFile: string; // mp4 path
+  outFile: string;
   durationSec: number;
   users: UserAudio[];
   events: VoiceEvent[];
@@ -52,22 +49,69 @@ export interface RenderArgs {
 }
 
 const QUALITY = {
-  low: { width: 854, height: 480, fps: 12, audioBitrate: "96k", videoBitrate: "600k" },
-  medium: { width: 1280, height: 720, fps: 15, audioBitrate: "128k", videoBitrate: "1500k" },
-  high: { width: 1920, height: 1080, fps: 24, audioBitrate: "192k", videoBitrate: "3500k" },
+  low:    { width: 854,  height: 480,  fps: 15, audioBitrate: "128k", videoBitrate: "800k"  },
+  medium: { width: 1280, height: 720,  fps: 24, audioBitrate: "160k", videoBitrate: "2000k" },
+  high:   { width: 1920, height: 1080, fps: 30, audioBitrate: "192k", videoBitrate: "4500k" },
 } as const;
 
-/**
- * Mix per-user PCM into a single stereo wav file, applying mute/volume.
- * Returns path to the mixed wav file.
- */
+// ── macOS / Discord Design Tokens ──────────────────────────
+
+const MAC = {
+  // Menu bar
+  menuBarH: 25,
+  menuBarBg: "rgba(30, 30, 30, 0.85)",
+  menuBarText: "#cccccc",
+  menuBarTextDim: "#888888",
+  // Desktop wallpaper
+  wallA: "#1b1135",
+  wallB: "#0a0a1a",
+  wallC: "#1a0a2e",
+  // Window chrome
+  titleBarH: 38,
+  titleBarBg: "#202225",
+  dotClose: "#ff5f57",
+  dotMinimize: "#febc2e",
+  dotMaximize: "#28c840",
+  winRadius: 10,
+  winShadow: "rgba(0, 0, 0, 0.65)",
+} as const;
+
+const DC = {
+  // Discord colors
+  sidebarBg: "#2b2d31",
+  sidebarW: 240,
+  channelText: "#949ba4",
+  channelActive: "#ffffff",
+  channelActiveBg: "rgba(255, 255, 255, 0.06)",
+  channelHover: "#dbdee1",
+  mainBg: "#313338",
+  headerBg: "#313338",
+  headerBorder: "#3f4147",
+  headerText: "#f2f3f5",
+  chatBg: "#313338",
+  msgAuthor: "#f2f3f5",
+  msgText: "#dbdee1",
+  msgTextDim: "#949ba4",
+  msgTimestamp: "#949ba4",
+  inputBg: "#383a40",
+  inputPlaceholder: "#6d6f78",
+  voiceConnected: "#23a559",
+  voiceUser: "#b5bac1",
+  voiceSpeaking: "#23a559",
+  voiceSpeakingBg: "rgba(35, 165, 89, 0.12)",
+  userCardBg: "#2b2d31",
+  statusGreen: "#23a559",
+  statusRed: "#f23f43",
+  blurple: "#5865f2",
+  roleDot: "#5865f2",
+} as const;
+
+// ── Audio Mixing ───────────────────────────────────────────
+
 async function mixAudio(args: RenderArgs): Promise<string> {
   const { users, edit, outDir, durationSec } = args;
   const mixedPath = path.join(outDir, "mixed.wav");
-
-  // Use ffmpeg's amix filter on all user files as PCM s16le inputs.
   if (users.length === 0) {
-    // Emit silence
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input("anullsrc=r=48000:cl=stereo")
@@ -79,20 +123,15 @@ async function mixAudio(args: RenderArgs): Promise<string> {
     });
     return mixedPath;
   }
-
   await new Promise<void>((resolve, reject) => {
     let cmd = ffmpeg();
     const filterParts: string[] = [];
     const amixLabels: string[] = [];
     users.forEach((u, idx) => {
       cmd = cmd.input(u.pcmFile).inputOptions([
-        "-f", "s16le",
-        "-ar", String(SAMPLE_RATE),
-        "-ac", String(CHANNELS),
+        "-f", "s16le", "-ar", String(SAMPLE_RATE), "-ac", String(CHANNELS),
       ]);
-      const vol = edit?.perUser?.[u.userId]?.mute
-        ? 0
-        : edit?.perUser?.[u.userId]?.volume ?? 1;
+      const vol = edit?.perUser?.[u.userId]?.mute ? 0 : edit?.perUser?.[u.userId]?.volume ?? 1;
       filterParts.push(`[${idx}:a]volume=${vol}[a${idx}]`);
       amixLabels.push(`[a${idx}]`);
     });
@@ -108,9 +147,7 @@ async function mixAudio(args: RenderArgs): Promise<string> {
   return mixedPath;
 }
 
-interface SpeakingState {
-  [userId: string]: boolean;
-}
+// ── Voice Status Tracking ──────────────────────────────────
 
 interface UserStatus {
   speaking: boolean;
@@ -121,13 +158,7 @@ interface UserStatus {
 }
 
 function emptyStatus(): UserStatus {
-  return {
-    speaking: false,
-    camera: false,
-    share: false,
-    selfMute: false,
-    serverMute: false,
-  };
+  return { speaking: false, camera: false, share: false, selfMute: false, serverMute: false };
 }
 
 function applyEvent(status: UserStatus, ev: VoiceEvent): UserStatus {
@@ -146,102 +177,57 @@ function applyEvent(status: UserStatus, ev: VoiceEvent): UserStatus {
   return status;
 }
 
-/**
- * Render frames + mux with audio into an MP4.
- *
- * Frames are produced via @napi-rs/canvas and piped as raw RGBA into ffmpeg.
- * Layout:
- *   ┌──────────────────────────────────────────────┐
- *   │  Title bar                                   │
- *   ├─────────────────────────────────┬────────────┤
- *   │                                 │            │
- *   │   User cards (grid)             │  Chat feed │
- *   │   (avatar + name + status)      │            │
- *   │                                 │            │
- *   └─────────────────────────────────┴────────────┘
- */
+// ── Main Render Entry ──────────────────────────────────────
+
 export async function renderRecording(args: RenderArgs): Promise<string> {
   const { width, height, fps, audioBitrate, videoBitrate } = QUALITY[args.quality];
   const totalSec = args.durationSec;
   const totalFrames = Math.max(1, Math.floor(totalSec * fps));
 
-  log.info(
-    { users: args.users.length, durationSec: totalSec, totalFrames, quality: args.quality },
-    "render start"
-  );
+  log.info({ users: args.users.length, durationSec: totalSec, totalFrames, quality: args.quality }, "render start");
 
-  // 1. Mix audio
   const mixedWav = await mixAudio(args);
-
-  // 2. Spawn ffmpeg expecting rawvideo on stdin
   if (!ffmpegPath) throw new Error("ffmpeg binary not available");
+
   const ff = spawn(ffmpegPath, [
     "-y",
-    "-f", "rawvideo",
-    "-pix_fmt", "rgba",
-    "-s", `${width}x${height}`,
-    "-r", String(fps),
+    "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${width}x${height}`, "-r", String(fps),
     "-i", "pipe:0",
     "-i", mixedWav,
-    "-map", "0:v",
-    "-map", "1:a",
-    "-c:v", "libx264",
-    "-preset", "veryfast",
-    "-b:v", videoBitrate,
-    "-pix_fmt", "yuv420p",
-    "-c:a", "aac",
-    "-b:a", audioBitrate,
-    "-shortest",
-    "-movflags", "+faststart",
+    "-map", "0:v", "-map", "1:a",
+    "-c:v", "libx264", "-preset", "veryfast", "-b:v", videoBitrate, "-pix_fmt", "yuv420p",
+    "-c:a", "aac", "-b:a", audioBitrate,
+    "-shortest", "-movflags", "+faststart",
     args.outFile,
   ]);
 
   ff.stderr.on("data", (d) => log.trace({ ff: d.toString() }, "ffmpeg"));
   const ffDone = new Promise<void>((resolve, reject) => {
-    ff.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with ${code}`));
-    });
+    ff.on("close", (code) => { if (code === 0) resolve(); else reject(new Error(`ffmpeg exited with ${code}`)); });
     ff.on("error", reject);
   });
 
-  // 3. Render frames
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
-  // Preload avatars
   const avatarImgs = new Map<string, Image | null>();
   await Promise.all(
     args.users.map(async (u) => {
-      if (!u.avatarUrl) {
-        avatarImgs.set(u.userId, null);
-        return;
-      }
-      try {
-        const img = await loadImage(u.avatarUrl);
-        avatarImgs.set(u.userId, img);
-      } catch {
-        avatarImgs.set(u.userId, null);
-      }
+      if (!u.avatarUrl) { avatarImgs.set(u.userId, null); return; }
+      try { avatarImgs.set(u.userId, await loadImage(u.avatarUrl)); }
+      catch { avatarImgs.set(u.userId, null); }
     })
   );
 
-  // Build per-frame user status snapshots by walking events
   const userStatusInit: Record<string, UserStatus> = {};
   for (const u of args.users) userStatusInit[u.userId] = emptyStatus();
-  // Sort events
   const sortedEvents = [...args.events].sort((a, b) => a.ts - b.ts);
   let eventIdx = 0;
   const liveStatus = JSON.parse(JSON.stringify(userStatusInit)) as Record<string, UserStatus>;
-
-  // For "speaking" detection from audio energy, do a coarse RMS lookup per-user.
-  // (Cheap approximation: read raw PCM and compute envelope at frame rate.)
   const speakEnvelope = computeEnvelope(args.users, fps, totalSec);
 
   for (let frame = 0; frame < totalFrames; frame++) {
     const tMs = (frame / fps) * 1000;
-
-    // Apply any events whose ts <= tMs
     while (eventIdx < sortedEvents.length && sortedEvents[eventIdx]!.ts <= tMs) {
       const ev = sortedEvents[eventIdx]!;
       if (!liveStatus[ev.userId]) liveStatus[ev.userId] = emptyStatus();
@@ -250,7 +236,7 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
     }
 
     drawFrame(ctx, width, height, {
-      title: args.title ?? "تسجيل صوتي",
+      title: args.title ?? "Voice Recording",
       users: args.users,
       avatarImgs,
       status: liveStatus,
@@ -271,198 +257,35 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
   return args.outFile;
 }
 
-/**
- * Compute a per-frame envelope (0..1) per user from their PCM file.
- * Cheap: subsample the PCM, take abs mean over a frame's worth of samples.
- */
-function computeEnvelope(
-  users: UserAudio[],
-  fps: number,
-  totalSec: number
-): Array<Record<string, number>> {
+// ── Envelope Computation ───────────────────────────────────
+
+function computeEnvelope(users: UserAudio[], fps: number, totalSec: number): Array<Record<string, number>> {
   const totalFrames = Math.max(1, Math.floor(totalSec * fps));
-  const out: Array<Record<string, number>> = Array.from(
-    { length: totalFrames },
-    () => ({})
-  );
+  const out: Array<Record<string, number>> = Array.from({ length: totalFrames }, () => ({}));
   const samplesPerFrame = Math.floor(SAMPLE_RATE / fps);
   const bytesPerFrame = samplesPerFrame * CHANNELS * 2;
-
   for (const u of users) {
     let fd: number;
-    try {
-      fd = fs.openSync(u.pcmFile, "r");
-    } catch {
-      continue;
-    }
+    try { fd = fs.openSync(u.pcmFile, "r"); } catch { continue; }
     const buf = Buffer.alloc(bytesPerFrame);
     for (let f = 0; f < totalFrames; f++) {
-      const offset = f * bytesPerFrame;
       let n = 0;
-      try {
-        n = fs.readSync(fd, buf, 0, bytesPerFrame, offset);
-      } catch {
-        n = 0;
-      }
-      if (n <= 0) {
-        out[f]![u.userId] = 0;
-        continue;
-      }
-      let sum = 0;
-      const stride = 32; // sample every 32 bytes for speed
-      let count = 0;
-      for (let i = 0; i < n - 1; i += stride) {
-        const s = buf.readInt16LE(i);
-        sum += Math.abs(s);
-        count++;
-      }
-      const meanAbs = count > 0 ? sum / count : 0;
-      const norm = Math.min(1, meanAbs / 8000);
-      out[f]![u.userId] = norm;
+      try { n = fs.readSync(fd, buf, 0, bytesPerFrame, f * bytesPerFrame); } catch { n = 0; }
+      if (n <= 0) { out[f]![u.userId] = 0; continue; }
+      let sum = 0; let count = 0;
+      for (let i = 0; i < n - 1; i += 32) { sum += Math.abs(buf.readInt16LE(i)); count++; }
+      out[f]![u.userId] = Math.min(1, (count > 0 ? sum / count : 0) / 8000);
     }
     fs.closeSync(fd);
   }
   return out;
 }
 
+// ── Drawing Primitives ─────────────────────────────────────
+
 type Ctx = ReturnType<ReturnType<typeof createCanvas>["getContext"]>;
 
-function drawFrame(
-  ctx: Ctx,
-  W: number,
-  H: number,
-  args: {
-    title: string;
-    users: UserAudio[];
-    avatarImgs: Map<string, Image | null>;
-    status: Record<string, UserStatus>;
-    envelope: Record<string, number>;
-    chat: ChatMsg[];
-    tMs: number;
-    totalMs: number;
-  }
-): void {
-  // Background — soft gradient (Liquid Glass)
-  const grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, "#eef3fb");
-  grad.addColorStop(1, "#dde6f3");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, W, H);
-
-  // Decorative blobs
-  ctx.save();
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = "#c8d6ec";
-  ctx.beginPath();
-  ctx.arc(W * 0.15, H * 0.85, H * 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#dcd2ec";
-  ctx.beginPath();
-  ctx.arc(W * 0.9, H * 0.1, H * 0.35, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  // Title bar
-  const titleH = Math.round(H * 0.08);
-  drawGlassPanel(ctx, 16, 16, W - 32, titleH, 18);
-  ctx.fillStyle = Palette.text;
-  ctx.font = `bold ${Math.round(titleH * 0.5)}px BotUI`;
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  ctx.fillText(args.title, W - 36, 16 + titleH / 2);
-
-  // Time
-  ctx.font = `${Math.round(titleH * 0.38)}px BotUI`;
-  ctx.fillStyle = Palette.textSoft;
-  ctx.textAlign = "left";
-  ctx.fillText(
-    `${formatTime(args.tMs)} / ${formatTime(args.totalMs)}`,
-    36,
-    16 + titleH / 2
-  );
-
-  // Layout
-  const padTop = 16 + titleH + 14;
-  const chatW = Math.round(W * 0.28);
-  const cardsArea = {
-    x: 16,
-    y: padTop,
-    w: W - 32 - chatW - 14,
-    h: H - padTop - 16,
-  };
-  const chatArea = {
-    x: cardsArea.x + cardsArea.w + 14,
-    y: padTop,
-    w: chatW,
-    h: H - padTop - 16,
-  };
-
-  drawGlassPanel(ctx, cardsArea.x, cardsArea.y, cardsArea.w, cardsArea.h, 22);
-  drawGlassPanel(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, 22);
-
-  // User cards grid
-  const users = args.users;
-  const n = Math.max(1, users.length);
-  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
-  const rows = Math.ceil(n / cols);
-  const cardPad = 14;
-  const cardW = (cardsArea.w - cardPad * (cols + 1)) / cols;
-  const cardH = (cardsArea.h - cardPad * (rows + 1)) / rows;
-
-  users.forEach((u, i) => {
-    const r = Math.floor(i / cols);
-    const c = i % cols;
-    const x = cardsArea.x + cardPad + c * (cardW + cardPad);
-    const y = cardsArea.y + cardPad + r * (cardH + cardPad);
-    drawUserCard(ctx, x, y, cardW, cardH, {
-      username: u.username,
-      img: args.avatarImgs.get(u.userId) ?? null,
-      speaking: (args.envelope[u.userId] ?? 0) > 0.05,
-      level: args.envelope[u.userId] ?? 0,
-      status: args.status[u.userId] ?? emptyStatus(),
-    });
-  });
-
-  // Chat feed
-  drawChatFeed(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, {
-    chat: args.chat,
-    nowMs: args.tMs,
-  });
-}
-
-function drawGlassPanel(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  ctx.save();
-  ctx.shadowColor = "rgba(60, 80, 120, 0.18)";
-  ctx.shadowBlur = 22;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
-  roundRect(ctx, x, y, w, h, r);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.lineWidth = 1.2;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function roundRect(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
+function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
@@ -473,152 +296,504 @@ function roundRect(
   ctx.closePath();
 }
 
-function drawUserCard(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  args: {
-    username: string;
-    img: Image | null;
-    speaking: boolean;
-    level: number;
-    status: UserStatus;
-  }
-): void {
-  // Card background
+function drawCircle(ctx: Ctx, cx: number, cy: number, r: number, fill: string): void {
   ctx.save();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
-  roundRect(ctx, x, y, w, h, 18);
+  ctx.fillStyle = fill;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── Main Frame ─────────────────────────────────────────────
+
+interface FrameArgs {
+  title: string;
+  users: UserAudio[];
+  avatarImgs: Map<string, Image | null>;
+  status: Record<string, UserStatus>;
+  envelope: Record<string, number>;
+  chat: ChatMsg[];
+  tMs: number;
+  totalMs: number;
+}
+
+function drawFrame(ctx: Ctx, W: number, H: number, args: FrameArgs): void {
+  const s = W / 1920;
+
+  // ── 1. macOS Desktop Wallpaper ─────────────────────────
+  const wallGrad = ctx.createLinearGradient(0, 0, W, H);
+  wallGrad.addColorStop(0, MAC.wallA);
+  wallGrad.addColorStop(0.4, MAC.wallB);
+  wallGrad.addColorStop(0.7, MAC.wallC);
+  wallGrad.addColorStop(1, MAC.wallB);
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle aurora-like glow blobs (like macOS Sequoia wallpaper)
+  ctx.save();
+  ctx.globalAlpha = 0.15;
+  const radGrad1 = ctx.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, H * 0.6);
+  radGrad1.addColorStop(0, "#6b2fa0");
+  radGrad1.addColorStop(1, "transparent");
+  ctx.fillStyle = radGrad1;
+  ctx.fillRect(0, 0, W, H);
+  const radGrad2 = ctx.createRadialGradient(W * 0.75, H * 0.7, 0, W * 0.75, H * 0.7, H * 0.5);
+  radGrad2.addColorStop(0, "#1a4a8a");
+  radGrad2.addColorStop(1, "transparent");
+  ctx.fillStyle = radGrad2;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+
+  // ── 2. macOS Menu Bar ──────────────────────────────────
+  const mbH = Math.round(MAC.menuBarH * s);
+  ctx.save();
+  ctx.fillStyle = MAC.menuBarBg;
+  ctx.fillRect(0, 0, W, mbH);
+  // Bottom border
+  ctx.strokeStyle = "rgba(255,255,255,0.05)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(0, mbH); ctx.lineTo(W, mbH); ctx.stroke();
+  ctx.restore();
+
+  // Apple logo (left)
+  ctx.save();
+  ctx.fillStyle = MAC.menuBarText;
+  ctx.font = `${Math.round(14 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("", Math.round(14 * s), mbH / 2);
+  // App name
+  ctx.font = `bold ${Math.round(12.5 * s)}px BotUI`;
+  ctx.fillText("Discord", Math.round(34 * s), mbH / 2);
+  // Menu items
+  ctx.font = `${Math.round(12 * s)}px BotUI`;
+  ctx.fillStyle = MAC.menuBarText;
+  const menuItems = ["File", "Edit", "View", "Window", "Help"];
+  let mx = Math.round(90 * s);
+  for (const item of menuItems) {
+    ctx.fillText(item, mx, mbH / 2);
+    mx += Math.round(ctx.measureText(item).width + 18 * s);
+  }
+  ctx.restore();
+
+  // Right side — time, wifi, battery
+  ctx.save();
+  ctx.fillStyle = MAC.menuBarText;
+  ctx.font = `${Math.round(12 * s)}px BotUI`;
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  const now = new Date();
+  const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  ctx.fillText(timeStr, W - Math.round(14 * s), mbH / 2);
+  ctx.fillStyle = MAC.menuBarTextDim;
+  ctx.fillText("🔋 ⚡ 📶", W - Math.round(80 * s), mbH / 2);
+  ctx.restore();
+
+  // ── 3. Discord Window ──────────────────────────────────
+  const winMargin = Math.round(20 * s);
+  const winX = winMargin;
+  const winY = mbH + Math.round(8 * s);
+  const winW = W - winMargin * 2;
+  const winH = H - winY - winMargin;
+  const winR = Math.round(MAC.winRadius * s);
+
+  // Window shadow
+  ctx.save();
+  ctx.shadowColor = MAC.winShadow;
+  ctx.shadowBlur = Math.round(40 * s);
+  ctx.shadowOffsetY = Math.round(10 * s);
+  ctx.fillStyle = DC.mainBg;
+  roundRect(ctx, winX, winY, winW, winH, winR);
   ctx.fill();
   ctx.restore();
 
-  // Speaking glow
-  if (args.speaking) {
-    ctx.save();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = Palette.speaking;
-    ctx.shadowColor = Palette.speaking;
-    ctx.shadowBlur = 18 + args.level * 18;
-    roundRect(ctx, x, y, w, h, 18);
-    ctx.stroke();
-    ctx.restore();
-  } else {
-    ctx.save();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
-    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 18);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  // Avatar
-  const avSize = Math.min(w * 0.55, h * 0.55);
-  const ax = x + (w - avSize) / 2;
-  const ay = y + h * 0.12;
+  // Window body
   ctx.save();
-  ctx.beginPath();
-  ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
-  ctx.closePath();
+  roundRect(ctx, winX, winY, winW, winH, winR);
   ctx.clip();
-  if (args.img) {
-    ctx.drawImage(args.img, ax, ay, avSize, avSize);
-  } else {
-    ctx.fillStyle = "#cdd6e4";
-    ctx.fillRect(ax, ay, avSize, avSize);
-  }
+
+  // ── 3a. Title Bar ──────────────────────────────────────
+  const tbH = Math.round(MAC.titleBarH * s);
+  ctx.fillStyle = MAC.titleBarBg;
+  ctx.fillRect(winX, winY, winW, tbH);
+  // Bottom border
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(winX, winY + tbH); ctx.lineTo(winX + winW, winY + tbH); ctx.stroke();
+
+  // Traffic lights
+  const dotR = Math.round(6 * s);
+  const dotY = winY + tbH / 2;
+  const dotStart = winX + Math.round(16 * s);
+  const dotGap = Math.round(20 * s);
+  drawCircle(ctx, dotStart, dotY, dotR, MAC.dotClose);
+  drawCircle(ctx, dotStart + dotGap, dotY, dotR, MAC.dotMinimize);
+  drawCircle(ctx, dotStart + dotGap * 2, dotY, dotR, MAC.dotMaximize);
+
+  // Window title (center)
+  ctx.fillStyle = "#999999";
+  ctx.font = `${Math.round(12.5 * s)}px BotUI`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText("Discord", winX + winW / 2, dotY);
+
+  // ── 3b. Sidebar ────────────────────────────────────────
+  const sbW = Math.round(DC.sidebarW * s);
+  const sbX = winX;
+  const sbY = winY + tbH;
+  const sbH = winH - tbH;
+
+  ctx.fillStyle = DC.sidebarBg;
+  ctx.fillRect(sbX, sbY, sbW, sbH);
+  // Right border
+  ctx.strokeStyle = "rgba(0,0,0,0.2)";
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(sbX + sbW, sbY); ctx.lineTo(sbX + sbW, sbY + sbH); ctx.stroke();
+
+  // Server name header
+  ctx.fillStyle = DC.headerText;
+  ctx.font = `bold ${Math.round(14 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("✦ Server", sbX + Math.round(16 * s), sbY + Math.round(20 * s));
+
+  // Channels
+  const chY = sbY + Math.round(50 * s);
+  ctx.fillStyle = DC.channelText;
+  ctx.font = `bold ${Math.round(10.5 * s)}px BotUI`;
+  ctx.fillText("TEXT CHANNELS", sbX + Math.round(16 * s), chY);
+
+  ctx.font = `${Math.round(13 * s)}px BotUI`;
+  ctx.fillStyle = DC.channelText;
+  ctx.fillText("# general", sbX + Math.round(16 * s), chY + Math.round(24 * s));
+  ctx.fillText("# chat", sbX + Math.round(16 * s), chY + Math.round(48 * s));
+
+  const vcHeaderY = chY + Math.round(80 * s);
+  ctx.fillStyle = DC.channelText;
+  ctx.font = `bold ${Math.round(10.5 * s)}px BotUI`;
+  ctx.fillText("VOICE CHANNELS", sbX + Math.round(16 * s), vcHeaderY);
+
+  // Active voice channel (highlighted)
+  const vcY = vcHeaderY + Math.round(20 * s);
+  ctx.save();
+  ctx.fillStyle = DC.channelActiveBg;
+  roundRect(ctx, sbX + Math.round(8 * s), vcY - Math.round(4 * s), sbW - Math.round(16 * s), Math.round(28 * s), Math.round(4 * s));
+  ctx.fill();
   ctx.restore();
 
-  // Avatar border
-  ctx.save();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = args.speaking ? Palette.speaking : "rgba(255, 255, 255, 0.95)";
+  ctx.fillStyle = DC.channelActive;
+  ctx.font = `600 ${Math.round(13 * s)}px BotUI`;
+  ctx.fillText("🔊 Voice", sbX + Math.round(16 * s), vcY + Math.round(10 * s));
+
+  // Connected users in sidebar (under voice channel)
+  let sideUserY = vcY + Math.round(32 * s);
+  for (const u of args.users.slice(0, 6)) {
+    const isSpeaking = (args.envelope[u.userId] ?? 0) > 0.05;
+    ctx.fillStyle = isSpeaking ? DC.voiceSpeaking : DC.voiceUser;
+    ctx.font = `${Math.round(12 * s)}px BotUI`;
+    const prefix = isSpeaking ? "🟢" : "⚪";
+    ctx.fillText(`  ${prefix} ${u.username}`, sbX + Math.round(20 * s), sideUserY);
+    sideUserY += Math.round(22 * s);
+  }
+
+  // Voice connected bar at bottom
+  const voiceBarH = Math.round(52 * s);
+  const voiceBarY = sbY + sbH - voiceBarH;
+  ctx.fillStyle = "#232428";
+  ctx.fillRect(sbX, voiceBarY, sbW, voiceBarH);
+  ctx.strokeStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath(); ctx.moveTo(sbX, voiceBarY); ctx.lineTo(sbX + sbW, voiceBarY); ctx.stroke();
+
+  ctx.fillStyle = DC.voiceConnected;
+  ctx.font = `bold ${Math.round(12 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("Voice Connected", sbX + Math.round(12 * s), voiceBarY + Math.round(16 * s));
+  ctx.fillStyle = DC.channelText;
+  ctx.font = `${Math.round(10.5 * s)}px BotUI`;
+  ctx.fillText("Voice / ✦ Server", sbX + Math.round(12 * s), voiceBarY + Math.round(34 * s));
+
+  // Timer
+  ctx.fillStyle = DC.channelText;
+  ctx.font = `${Math.round(11 * s)}px BotUI`;
+  ctx.textAlign = "right";
+  ctx.fillText(formatTime(args.tMs), sbX + sbW - Math.round(12 * s), voiceBarY + Math.round(16 * s));
+
+  // ── 3c. Main Content Area ──────────────────────────────
+  const mainX = sbX + sbW;
+  const mainY = sbY;
+  const mainW = winW - sbW;
+  const mainH = sbH;
+
+  ctx.fillStyle = DC.mainBg;
+  ctx.fillRect(mainX, mainY, mainW, mainH);
+
+  // Header
+  const hdrH = Math.round(48 * s);
+  ctx.fillStyle = DC.headerBg;
+  ctx.fillRect(mainX, mainY, mainW, hdrH);
+  ctx.strokeStyle = DC.headerBorder;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(mainX, mainY + hdrH); ctx.lineTo(mainX + mainW, mainY + hdrH); ctx.stroke();
+
+  ctx.fillStyle = DC.headerText;
+  ctx.font = `bold ${Math.round(14 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("🔊 Voice", mainX + Math.round(16 * s), mainY + hdrH / 2);
+
+  // Participant count
+  ctx.fillStyle = DC.channelText;
+  ctx.font = `${Math.round(12 * s)}px BotUI`;
+  ctx.textAlign = "right";
+  ctx.fillText(`${args.users.length} participants`, mainX + mainW - Math.round(16 * s), mainY + hdrH / 2);
+  ctx.textAlign = "left";
+
+  // Split: voice grid (left ~65%) + chat (right ~35%)
+  const chatPanelW = Math.round(mainW * 0.32);
+  const gridW = mainW - chatPanelW;
+  const contentY = mainY + hdrH;
+  const contentH = mainH - hdrH;
+
+  // ── Voice Grid ─────────────────────────────────────────
+  drawVoiceGrid(ctx, mainX, contentY, gridW, contentH, s, args);
+
+  // ── Chat Divider ───────────────────────────────────────
+  ctx.strokeStyle = "rgba(255,255,255,0.06)";
+  ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
+  ctx.moveTo(mainX + gridW, contentY + Math.round(8 * s));
+  ctx.lineTo(mainX + gridW, contentY + contentH - Math.round(8 * s));
   ctx.stroke();
-  ctx.restore();
 
-  // Username
-  ctx.save();
-  ctx.fillStyle = Palette.text;
-  const nameSize = Math.max(14, Math.round(h * 0.13));
-  ctx.font = `bold ${nameSize}px BotUI`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(args.username, x + w / 2, y + h * 0.78, w - 20);
-  ctx.restore();
+  // ── Chat Panel ─────────────────────────────────────────
+  drawDiscordChat(ctx, mainX + gridW, contentY, chatPanelW, contentH, s, args);
 
-  // Status icons row
-  const iconY = y + h - 22;
-  const icons: { color: string; label: string }[] = [];
-  if (args.status.camera) icons.push({ color: Palette.cameraOn, label: "📹" });
-  if (args.status.share) icons.push({ color: Palette.shareOn, label: "🖥" });
-  if (args.status.selfMute || args.status.serverMute)
-    icons.push({ color: Palette.muted, label: "🔇" });
-  const iconW = 22;
-  const gap = 6;
-  const totalIconW = icons.length * iconW + Math.max(0, icons.length - 1) * gap;
-  let ix = x + (w - totalIconW) / 2;
-  for (const ic of icons) {
-    ctx.save();
-    ctx.fillStyle = ic.color;
-    ctx.beginPath();
-    ctx.arc(ix + iconW / 2, iconY, iconW / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-    ix += iconW + gap;
-  }
+  ctx.restore(); // unclip window
 }
 
-function drawChatFeed(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  args: { chat: ChatMsg[]; nowMs: number }
+// ── Discord Voice Grid ─────────────────────────────────────
+
+function drawVoiceGrid(
+  ctx: Ctx, x: number, y: number, w: number, h: number, s: number, args: FrameArgs
+): void {
+  const users = args.users;
+  const n = Math.max(1, users.length);
+  const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
+  const rows = Math.ceil(n / cols);
+  const pad = Math.round(12 * s);
+  const cardW = (w - pad * (cols + 1)) / cols;
+  const cardH = (h - pad * (rows + 1)) / rows;
+  const cardR = Math.round(8 * s);
+
+  users.forEach((u, i) => {
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    const cx = x + pad + c * (cardW + pad);
+    const cy = y + pad + r * (cardH + pad);
+    const isSpeaking = (args.envelope[u.userId] ?? 0) > 0.05;
+    const level = args.envelope[u.userId] ?? 0;
+    const st = args.status[u.userId] ?? emptyStatus();
+
+    // Card background (Discord-style dark tile)
+    ctx.save();
+    ctx.fillStyle = isSpeaking ? DC.voiceSpeakingBg : DC.userCardBg;
+    roundRect(ctx, cx, cy, cardW, cardH, cardR);
+    ctx.fill();
+    ctx.restore();
+
+    // Speaking border
+    if (isSpeaking) {
+      ctx.save();
+      ctx.lineWidth = Math.round(2.5 * s);
+      ctx.strokeStyle = DC.voiceSpeaking;
+      ctx.shadowColor = DC.voiceSpeaking;
+      ctx.shadowBlur = Math.round(8 * s) + level * Math.round(12 * s);
+      roundRect(ctx, cx, cy, cardW, cardH, cardR);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.04)";
+      roundRect(ctx, cx, cy, cardW, cardH, cardR);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Avatar
+    const avSize = Math.min(cardW * 0.5, cardH * 0.5);
+    const ax = cx + (cardW - avSize) / 2;
+    const ay = cy + cardH * 0.08;
+
+    // Avatar circle bg
+    ctx.save();
+    ctx.fillStyle = "#36393f";
+    ctx.beginPath();
+    ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2 + Math.round(2 * s), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Avatar image
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    const img = args.avatarImgs.get(u.userId) ?? null;
+    if (img) {
+      ctx.drawImage(img, ax, ay, avSize, avSize);
+    } else {
+      ctx.fillStyle = "#5865f2";
+      ctx.fillRect(ax, ay, avSize, avSize);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `bold ${Math.round(avSize * 0.4)}px BotUI`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(u.username.charAt(0).toUpperCase(), ax + avSize / 2, ay + avSize / 2);
+    }
+    ctx.restore();
+
+    // Speaking ring on avatar
+    if (isSpeaking) {
+      ctx.save();
+      ctx.lineWidth = Math.round(3 * s);
+      ctx.strokeStyle = DC.voiceSpeaking;
+      ctx.shadowColor = DC.voiceSpeaking;
+      ctx.shadowBlur = Math.round(6 * s);
+      ctx.beginPath();
+      ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2 + Math.round(2 * s), 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Username
+    ctx.save();
+    ctx.fillStyle = isSpeaking ? "#ffffff" : DC.voiceUser;
+    const nameSize = Math.max(11, Math.round(cardH * 0.1));
+    ctx.font = `600 ${nameSize}px BotUI`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(u.username, cx + cardW / 2, cy + cardH * 0.74, cardW - Math.round(12 * s));
+    ctx.restore();
+
+    // Status indicators (muted, camera, screen share)
+    const iconSize = Math.round(16 * s);
+    const icons: { emoji: string; color: string }[] = [];
+    if (st.selfMute || st.serverMute) icons.push({ emoji: "🔇", color: DC.statusRed });
+    if (st.camera) icons.push({ emoji: "📹", color: DC.blurple });
+    if (st.share) icons.push({ emoji: "🖥️", color: Palette.shareOn });
+
+    if (icons.length > 0) {
+      const totalW = icons.length * iconSize + (icons.length - 1) * Math.round(4 * s);
+      let ix = cx + (cardW - totalW) / 2;
+      const iy = cy + cardH * 0.88;
+      for (const ic of icons) {
+        ctx.save();
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        roundRect(ctx, ix - Math.round(2 * s), iy - iconSize / 2 - Math.round(2 * s), iconSize + Math.round(4 * s), iconSize + Math.round(4 * s), Math.round(4 * s));
+        ctx.fill();
+        ctx.restore();
+        ctx.save();
+        ctx.fillStyle = ic.color;
+        ctx.font = `${Math.round(iconSize * 0.7)}px BotUI`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(ic.emoji, ix + iconSize / 2, iy);
+        ctx.restore();
+        ix += iconSize + Math.round(4 * s);
+      }
+    }
+  });
+}
+
+// ── Discord Chat Panel ─────────────────────────────────────
+
+function drawDiscordChat(
+  ctx: Ctx, x: number, y: number, w: number, h: number, s: number, args: FrameArgs
 ): void {
   ctx.save();
   ctx.beginPath();
-  roundRect(ctx, x, y, w, h, 22);
+  ctx.rect(x, y, w, h);
   ctx.clip();
 
-  ctx.fillStyle = Palette.text;
-  ctx.font = `bold 18px BotUI`;
-  ctx.textAlign = "right";
-  ctx.textBaseline = "top";
-  ctx.fillText("شات الروم", x + w - 14, y + 12);
+  ctx.fillStyle = DC.chatBg;
+  ctx.fillRect(x, y, w, h);
 
-  // Show messages whose ts <= nowMs, fade older ones
-  const visible = args.chat.filter((m) => m.ts <= args.nowMs);
+  // Chat header
+  const chatHdrH = Math.round(36 * s);
+  ctx.fillStyle = DC.headerBg;
+  ctx.fillRect(x, y, w, chatHdrH);
+  ctx.strokeStyle = DC.headerBorder;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x, y + chatHdrH); ctx.lineTo(x + w, y + chatHdrH); ctx.stroke();
+
+  ctx.fillStyle = DC.headerText;
+  ctx.font = `bold ${Math.round(13 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("# chat", x + Math.round(14 * s), y + chatHdrH / 2);
+
+  // Messages
+  const visible = args.chat.filter((m) => m.ts <= args.tMs);
   const last = visible.slice(-12);
-  let cy = y + 44;
-  ctx.font = `14px BotUI`;
+  const msgPad = Math.round(12 * s);
+  let cy = y + chatHdrH + Math.round(8 * s);
+
   for (const m of last) {
-    const age = args.nowMs - m.ts;
-    const fade = Math.min(1, Math.max(0.35, 1 - age / 60_000));
+    const age = args.tMs - m.ts;
+    const fade = Math.min(1, Math.max(0.4, 1 - age / 60_000));
     ctx.globalAlpha = fade;
-    const lineH = 22;
-    ctx.fillStyle = Palette.text;
-    ctx.font = `bold 13px BotUI`;
-    ctx.textAlign = "right";
-    ctx.fillText(m.username, x + w - 14, cy);
-    cy += 16;
-    ctx.fillStyle = Palette.textSoft;
-    ctx.font = `13px BotUI`;
-    const text = m.content.length > 80 ? m.content.slice(0, 77) + "…" : m.content;
-    ctx.fillText(text, x + w - 14, cy, w - 28);
-    cy += lineH;
-    if (cy > y + h - 20) break;
+
+    // Avatar circle
+    const avR = Math.round(8 * s);
+    const avX = x + msgPad + avR;
+    const avY = cy + avR + Math.round(2 * s);
+    drawCircle(ctx, avX, avY, avR, DC.blurple);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${Math.round(avR)}px BotUI`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(m.username.charAt(0).toUpperCase(), avX, avY);
+
+    // Username + timestamp
+    const textX = x + msgPad + avR * 2 + Math.round(8 * s);
+    ctx.fillStyle = DC.msgAuthor;
+    ctx.font = `600 ${Math.round(12 * s)}px BotUI`;
+    ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(m.username, textX, cy);
+
+    // Timestamp
+    const nameW = ctx.measureText(m.username).width;
+    ctx.fillStyle = DC.msgTimestamp;
+    ctx.font = `${Math.round(9.5 * s)}px BotUI`;
+    const ts = new Date(m.ts).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+    ctx.fillText(ts, textX + nameW + Math.round(8 * s), cy + Math.round(2 * s));
+
+    // Message text
+    cy += Math.round(18 * s);
+    ctx.fillStyle = DC.msgText;
+    ctx.font = `${Math.round(12 * s)}px BotUI`;
+    const text = m.content.length > 50 ? m.content.slice(0, 47) + "…" : m.content;
+    ctx.fillText(text, textX, cy, w - textX + x - msgPad);
+
+    cy += Math.round(22 * s);
+    if (cy > y + h - Math.round(50 * s)) break;
   }
   ctx.globalAlpha = 1;
+
+  // Message input box at bottom
+  const inputH = Math.round(40 * s);
+  const inputY = y + h - inputH - Math.round(8 * s);
+  const inputX = x + Math.round(12 * s);
+  const inputW = w - Math.round(24 * s);
+  const inputR = Math.round(8 * s);
+
+  ctx.fillStyle = DC.inputBg;
+  roundRect(ctx, inputX, inputY, inputW, inputH, inputR);
+  ctx.fill();
+
+  ctx.fillStyle = DC.inputPlaceholder;
+  ctx.font = `${Math.round(12 * s)}px BotUI`;
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("Message #chat", inputX + Math.round(14 * s), inputY + inputH / 2);
+
   ctx.restore();
 }
 
 function formatTime(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const ss = s % 60;
+  const sec = Math.floor(ms / 1000);
+  const m = Math.floor(sec / 60);
+  const ss = sec % 60;
   return `${m.toString().padStart(2, "0")}:${ss.toString().padStart(2, "0")}`;
 }

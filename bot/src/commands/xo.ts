@@ -5,18 +5,19 @@ import {
 import { randomUUID } from "node:crypto";
 import type { SlashCommand } from "../client.js";
 import { createLobby, lobbyRow } from "../modules/xo/lobby.js";
-import { buildEmbed } from "../ui/embeds.js";
+import { gameEmbed } from "../ui/embeds.js";
 import { Palette } from "../utils/colors.js";
+import { L } from "../utils/locale.js";
 
 export const xoCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("xo")
-    .setDescription("ابدأ لعبة XO 3 جولات (أو اختر العدد)")
+    .setDescription("ابدأ لعبة XO | Start a Tic-Tac-Toe game")
     .setDMPermission(false)
     .addIntegerOption((o) =>
       o
         .setName("rounds")
-        .setDescription("عدد الجولات (افتراضي 3)")
+        .setDescription("عدد الجولات (افتراضي 3) | Number of rounds (default 3)")
         .setMinValue(1)
         .setMaxValue(9)
     ),
@@ -32,13 +33,13 @@ export const xoCommand: SlashCommand = {
       totalRounds: rounds,
     });
     await interaction.reply({
-      content: `<@${interaction.user.id}> فتح لعبة XO — اضغط انضمام`,
+      content: `<@${interaction.user.id}> فتح لعبة XO — اضغط انضمام | opened XO — press Join`,
       embeds: [
-        buildEmbed({
-          title: "XO — لوبي مفتوح",
-          description: `الجولات: ${rounds}\nيقدر شخصين ينضمون.`,
-          color: Palette.accent,
-        }),
+        gameEmbed(
+          `${L.xoRound(1, rounds)}\nيقدر شخصين ينضمون | Two players can join.`,
+          L.xoLobbyOpen,
+          Palette.accent
+        ),
       ],
       components: [lobbyRow(id)],
     });

@@ -6,26 +6,27 @@ import {
 } from "discord.js";
 import type { SlashCommand } from "../client.js";
 import { recordingManager } from "../modules/recorder/state.js";
-import { recordPanelRow } from "../ui/components.js";
+import { recordPanelRows } from "../ui/components.js";
 import { buildEmbed, errorEmbed, successEmbed } from "../ui/embeds.js";
 import { getGuildSettings } from "../db/settings.js";
 import { Palette } from "../utils/colors.js";
+import { L } from "../utils/locale.js";
 
 export const recordCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("record")
-    .setDescription("إدارة التسجيل الصوتي")
+    .setDescription("إدارة التسجيل الصوتي | Manage voice recording")
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages.toString())
     .setDMPermission(false)
     .addSubcommand((s) =>
-      s.setName("panel").setDescription("نشر لوحة التحكم في القناة الحالية")
+      s.setName("panel").setDescription("نشر لوحة التحكم | Post control panel")
     )
-    .addSubcommand((s) => s.setName("start").setDescription("بدء التسجيل"))
-    .addSubcommand((s) => s.setName("stop").setDescription("إيقاف التسجيل"))
+    .addSubcommand((s) => s.setName("start").setDescription("بدء التسجيل | Start recording"))
+    .addSubcommand((s) => s.setName("stop").setDescription("إيقاف التسجيل | Stop recording"))
+    .addSubcommand((s) => s.setName("pause").setDescription("إيقاف مؤقت | Pause recording"))
+    .addSubcommand((s) => s.setName("resume").setDescription("استمرار التسجيل | Resume recording"))
     .addSubcommand((s) =>
-      s
-        .setName("status")
-        .setDescription("عرض حالة التسجيل الحالية")
+      s.setName("status").setDescription("حالة التسجيل | Recording status")
     ),
   async execute(interaction: ChatInputCommandInteraction) {
     if (!interaction.guild) return;
@@ -34,20 +35,23 @@ export const recordCommand: SlashCommand = {
 
     if (sub === "panel") {
       const isRec = recordingManager.isActive(interaction.guild.id);
+      const session = recordingManager.get(interaction.guild.id);
+      const qualityLabel = settings.render_quality === "high" ? "1080p" : settings.render_quality === "medium" ? "720p" : "480p";
       await interaction.reply({
         embeds: [
           buildEmbed({
-            title: "لوحة التسجيل",
+            title: `🎙️ ${L.recPanel}`,
             description: [
-              `**القناة الافتراضية:** ${settings.pin_channel_id ? `<#${settings.pin_channel_id}>` : "غير محدد"}`,
-              `**المدة الافتراضية:** ${settings.default_duration_minutes} دقيقة`,
-              `**Buffer:** ${settings.max_buffer_minutes} دقيقة`,
-              `**جودة الفيديو:** ${settings.render_quality}`,
-            ].join("\n"),
-            color: Palette.accent,
+              `**القناة | Channel:** ${settings.pin_channel_id ? `<#${settings.pin_channel_id}>` : "غير محدد | Not set"}`,
+              `**المدة | Duration:** ${settings.default_duration_minutes} دقيقة | min`,
+              `**البافر | Buffer:** ${settings.max_buffer_minutes} دقيقة | min`,
+              `**الجودة | Quality:** ${qualityLabel}`,
+              isRec && session ? `\n🔴 **${L.recording}** — ${L.formatDuration(Math.floor((Date.now() - session.startedAt) / 1000))}` : "",
+            ].filter(Boolean).join("\n"),
+            color: isRec ? Palette.danger : Palette.accent,
           }),
         ],
-        components: [recordPanelRow(isRec)],
+        components: recordPanelRows(isRec, session?.paused),
       });
       return;
     }
@@ -56,23 +60,26 @@ export const recordCommand: SlashCommand = {
       const s = recordingManager.get(interaction.guild.id);
       if (!s) {
         await interaction.reply({
-          embeds: [buildEmbed({ description: "ما فيه تسجيل شغّال." })],
+          embeds: [buildEmbed({ description: L.notRecording })],
           flags: MessageFlags.Ephemeral,
         });
         return;
       }
       const secs = Math.floor((Date.now() - s.startedAt) / 1000);
+      const effectiveSecs = recordingManager.effectiveDuration(interaction.guild.id);
       await interaction.reply({
         embeds: [
           buildEmbed({
-            title: "حالة التسجيل",
+            title: `🎙️ ${L.recStatus}`,
             description: [
-              `**الروم:** <#${s.channelId}>`,
-              `**المدة:** ${formatDuration(secs)}`,
-              `**عدد المشاركين:** ${s.buffer.listUsers().length}`,
-              `**بدأ بواسطة:** <@${s.startedBy}>`,
-            ].join("\n"),
-            color: Palette.accent,
+              `**الروم | Channel:** <#${s.channelId}>`,
+              `**المدة الإجمالية | Total:** ${L.formatDuration(secs)}`,
+              `**المدة الفعلية | Effective:** ${L.formatDuration(effectiveSecs)}`,
+              `**المشاركون | Participants:** ${s.buffer.listUsers().length}`,
+              `**بدأ بواسطة | Started by:** <@${s.startedBy}>`,
+              s.paused ? `\n⏸️ **${L.recPaused}**` : "",
+            ].filter(Boolean).join("\n"),
+            color: s.paused ? Palette.warn : Palette.success,
           }),
         ],
         flags: MessageFlags.Ephemeral,
@@ -88,7 +95,7 @@ export const recordCommand: SlashCommand = {
           : null);
       if (!channel || !channel.isVoiceBased()) {
         await interaction.reply({
-          embeds: [errorEmbed("لازم تكون داخل روم صوتي، أو حدد روم تثبيت من /setup.")],
+          embeds: [errorEmbed(L.notInVoice)],
           flags: MessageFlags.Ephemeral,
         });
         return;
@@ -100,10 +107,10 @@ export const recordCommand: SlashCommand = {
           startedBy: interaction.user.id,
         });
         await interaction.editReply({
-          embeds: [successEmbed(`بدأت التسجيل في <#${channel.id}>.`)],
+          embeds: [successEmbed(`بدأت التسجيل في <#${channel.id}> | Recording started in <#${channel.id}>.`)],
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "خطأ غير متوقع";
+        const msg = err instanceof Error ? err.message : L.unknownError;
         await interaction.editReply({ embeds: [errorEmbed(msg)] });
       }
       return;
@@ -113,25 +120,46 @@ export const recordCommand: SlashCommand = {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       const stopped = await recordingManager.stop(interaction.guild.id);
       if (!stopped) {
-        await interaction.editReply({ embeds: [errorEmbed("ما فيه تسجيل شغّال.")] });
+        await interaction.editReply({ embeds: [errorEmbed(L.notRecording)] });
         return;
       }
+      const dur = L.formatDuration(Math.floor((Date.now() - stopped.startedAt) / 1000));
       await interaction.editReply({
         embeds: [
           successEmbed(
-            `تم إيقاف التسجيل. استخدم لوحة التسجيل لإرسال Clip أو نسخة كاملة في ثريد.`
+            `تم إيقاف التسجيل — المدة: ${dur}\nRecording stopped — duration: ${dur}`
           ),
         ],
       });
       return;
     }
+
+    if (sub === "pause") {
+      const session = recordingManager.get(interaction.guild.id);
+      if (!session) {
+        await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+        return;
+      }
+      const ok = recordingManager.pause(interaction.guild.id);
+      await interaction.reply({
+        embeds: [ok ? successEmbed(L.recPaused) : errorEmbed(L.recAlreadyPaused)],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (sub === "resume") {
+      const session = recordingManager.get(interaction.guild.id);
+      if (!session) {
+        await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+        return;
+      }
+      const ok = recordingManager.resume(interaction.guild.id);
+      await interaction.reply({
+        embeds: [ok ? successEmbed(L.recResumed) : errorEmbed(L.recNotPaused)],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
   },
 };
-
-function formatDuration(sec: number): string {
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = sec % 60;
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-}
