@@ -57,6 +57,46 @@ const QUALITY = {
   high: { width: 1920, height: 1080, fps: 30, audioBitrate: "192k", videoBitrate: "4500k" },
 } as const;
 
+// ── Liquid Glass Color Palette ─────────────────────────────
+
+const LG = {
+  // macOS-like window chrome
+  windowBg: "rgba(28, 28, 30, 0.82)",
+  windowBorder: "rgba(255, 255, 255, 0.08)",
+  windowShadow: "rgba(0, 0, 0, 0.55)",
+  // Traffic lights
+  dotClose: "#ff5f57",
+  dotMinimize: "#febc2e",
+  dotMaximize: "#28c840",
+  dotInactive: "rgba(255, 255, 255, 0.12)",
+  // Glass panels
+  glassBg: "rgba(255, 255, 255, 0.04)",
+  glassBorder: "rgba(255, 255, 255, 0.10)",
+  glassHighlight: "rgba(255, 255, 255, 0.06)",
+  // Card
+  cardBg: "rgba(255, 255, 255, 0.06)",
+  cardBorder: "rgba(255, 255, 255, 0.09)",
+  cardSpeaking: "rgba(88, 101, 242, 0.35)",
+  // Text
+  textPrimary: "#f5f5f7",
+  textSecondary: "#a1a1a6",
+  textTertiary: "#6e6e73",
+  // Accent
+  accent: "#5865f2",
+  accentGlow: "rgba(88, 101, 242, 0.30)",
+  speakGreen: "#30d158",
+  speakGlow: "rgba(48, 209, 88, 0.35)",
+  // Chat
+  chatBubbleSelf: "rgba(88, 101, 242, 0.20)",
+  chatBubbleOther: "rgba(255, 255, 255, 0.06)",
+  // Background mesh
+  meshA: "#1c1c2e",
+  meshB: "#0d0d1a",
+  blobA: "rgba(88, 101, 242, 0.08)",
+  blobB: "rgba(168, 85, 247, 0.06)",
+  blobC: "rgba(48, 209, 88, 0.04)",
+} as const;
+
 /**
  * Mix per-user PCM into a single stereo wav file, applying mute/volume.
  * Returns path to the mixed wav file.
@@ -65,9 +105,7 @@ async function mixAudio(args: RenderArgs): Promise<string> {
   const { users, edit, outDir, durationSec } = args;
   const mixedPath = path.join(outDir, "mixed.wav");
 
-  // Use ffmpeg's amix filter on all user files as PCM s16le inputs.
   if (users.length === 0) {
-    // Emit silence
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input("anullsrc=r=48000:cl=stereo")
@@ -108,10 +146,6 @@ async function mixAudio(args: RenderArgs): Promise<string> {
   return mixedPath;
 }
 
-interface _SpeakingState {
-  [userId: string]: boolean;
-}
-
 interface UserStatus {
   speaking: boolean;
   camera: boolean;
@@ -121,13 +155,7 @@ interface UserStatus {
 }
 
 function emptyStatus(): UserStatus {
-  return {
-    speaking: false,
-    camera: false,
-    share: false,
-    selfMute: false,
-    serverMute: false,
-  };
+  return { speaking: false, camera: false, share: false, selfMute: false, serverMute: false };
 }
 
 function applyEvent(status: UserStatus, ev: VoiceEvent): UserStatus {
@@ -149,16 +177,17 @@ function applyEvent(status: UserStatus, ev: VoiceEvent): UserStatus {
 /**
  * Render frames + mux with audio into an MP4.
  *
- * Frames are produced via @napi-rs/canvas and piped as raw RGBA into ffmpeg.
- * Layout:
- *   ┌──────────────────────────────────────────────┐
- *   │  Title bar                                   │
- *   ├─────────────────────────────────┬────────────┤
- *   │                                 │            │
- *   │   User cards (grid)             │  Chat feed │
- *   │   (avatar + name + status)      │            │
- *   │                                 │            │
- *   └─────────────────────────────────┴────────────┘
+ * Liquid Glass macOS-style layout:
+ *   ┌─● ● ● ─── Title ──────────── 00:00 / 05:00 ─┐
+ *   │ ═══════════════════════════════════════════════ │  ← progress bar
+ *   ├────────────────────────────────┬───────────────┤
+ *   │                                │  💬 Chat      │
+ *   │   User cards (glass grid)      │  ┌──────┐    │
+ *   │   ┌───────┐  ┌───────┐        │  │ msg  │    │
+ *   │   │avatar │  │avatar │        │  │ msg  │    │
+ *   │   │ name  │  │ name  │        │  └──────┘    │
+ *   │   └───────┘  └───────┘        │               │
+ *   └────────────────────────────────┴───────────────┘
  */
 export async function renderRecording(args: RenderArgs): Promise<string> {
   const { width, height, fps, audioBitrate, videoBitrate } = QUALITY[args.quality];
@@ -170,10 +199,8 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
     "render start"
   );
 
-  // 1. Mix audio
   const mixedWav = await mixAudio(args);
 
-  // 2. Spawn ffmpeg expecting rawvideo on stdin
   if (!ffmpegPath) throw new Error("ffmpeg binary not available");
   const ff = spawn(ffmpegPath, [
     "-y",
@@ -205,7 +232,6 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
     ff.on("error", reject);
   });
 
-  // 3. Render frames
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
@@ -213,10 +239,7 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
   const avatarImgs = new Map<string, Image | null>();
   await Promise.all(
     args.users.map(async (u) => {
-      if (!u.avatarUrl) {
-        avatarImgs.set(u.userId, null);
-        return;
-      }
+      if (!u.avatarUrl) { avatarImgs.set(u.userId, null); return; }
       try {
         const img = await loadImage(u.avatarUrl);
         avatarImgs.set(u.userId, img);
@@ -226,22 +249,17 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
     })
   );
 
-  // Build per-frame user status snapshots by walking events
+  // Build per-frame user status
   const userStatusInit: Record<string, UserStatus> = {};
   for (const u of args.users) userStatusInit[u.userId] = emptyStatus();
-  // Sort events
   const sortedEvents = [...args.events].sort((a, b) => a.ts - b.ts);
   let eventIdx = 0;
   const liveStatus = JSON.parse(JSON.stringify(userStatusInit)) as Record<string, UserStatus>;
-
-  // For "speaking" detection from audio energy, do a coarse RMS lookup per-user.
-  // (Cheap approximation: read raw PCM and compute envelope at frame rate.)
   const speakEnvelope = computeEnvelope(args.users, fps, totalSec);
 
   for (let frame = 0; frame < totalFrames; frame++) {
     const tMs = (frame / fps) * 1000;
 
-    // Apply any events whose ts <= tMs
     while (eventIdx < sortedEvents.length && sortedEvents[eventIdx]!.ts <= tMs) {
       const ev = sortedEvents[eventIdx]!;
       if (!liveStatus[ev.userId]) liveStatus[ev.userId] = emptyStatus();
@@ -250,7 +268,7 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
     }
 
     drawFrame(ctx, width, height, {
-      title: args.title ?? "تسجيل صوتي",
+      title: args.title ?? "تسجيل صوتي | Voice Recording",
       users: args.users,
       avatarImgs,
       status: liveStatus,
@@ -273,7 +291,6 @@ export async function renderRecording(args: RenderArgs): Promise<string> {
 
 /**
  * Compute a per-frame envelope (0..1) per user from their PCM file.
- * Cheap: subsample the PCM, take abs mean over a frame's worth of samples.
  */
 function computeEnvelope(
   users: UserAudio[],
@@ -281,51 +298,117 @@ function computeEnvelope(
   totalSec: number
 ): Array<Record<string, number>> {
   const totalFrames = Math.max(1, Math.floor(totalSec * fps));
-  const out: Array<Record<string, number>> = Array.from(
-    { length: totalFrames },
-    () => ({})
-  );
+  const out: Array<Record<string, number>> = Array.from({ length: totalFrames }, () => ({}));
   const samplesPerFrame = Math.floor(SAMPLE_RATE / fps);
   const bytesPerFrame = samplesPerFrame * CHANNELS * 2;
 
   for (const u of users) {
     let fd: number;
-    try {
-      fd = fs.openSync(u.pcmFile, "r");
-    } catch {
-      continue;
-    }
+    try { fd = fs.openSync(u.pcmFile, "r"); } catch { continue; }
     const buf = Buffer.alloc(bytesPerFrame);
     for (let f = 0; f < totalFrames; f++) {
       const offset = f * bytesPerFrame;
       let n = 0;
-      try {
-        n = fs.readSync(fd, buf, 0, bytesPerFrame, offset);
-      } catch {
-        n = 0;
-      }
-      if (n <= 0) {
-        out[f]![u.userId] = 0;
-        continue;
-      }
+      try { n = fs.readSync(fd, buf, 0, bytesPerFrame, offset); } catch { n = 0; }
+      if (n <= 0) { out[f]![u.userId] = 0; continue; }
       let sum = 0;
-      const stride = 32; // sample every 32 bytes for speed
+      const stride = 32;
       let count = 0;
       for (let i = 0; i < n - 1; i += stride) {
-        const s = buf.readInt16LE(i);
-        sum += Math.abs(s);
+        sum += Math.abs(buf.readInt16LE(i));
         count++;
       }
       const meanAbs = count > 0 ? sum / count : 0;
-      const norm = Math.min(1, meanAbs / 8000);
-      out[f]![u.userId] = norm;
+      out[f]![u.userId] = Math.min(1, meanAbs / 8000);
     }
     fs.closeSync(fd);
   }
   return out;
 }
 
+// ── Drawing Utilities ──────────────────────────────────────
+
 type Ctx = ReturnType<ReturnType<typeof createCanvas>["getContext"]>;
+
+function roundRect(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+/** Draw a macOS-style traffic light dot */
+function drawDot(ctx: Ctx, cx: number, cy: number, radius: number, color: string): void {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // Inner highlight
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx - radius * 0.2, cy - radius * 0.25, radius * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/** Liquid Glass panel — translucent with soft border and inner highlight */
+function drawGlassPanel(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  // Drop shadow
+  ctx.save();
+  ctx.shadowColor = LG.windowShadow;
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 8;
+  ctx.fillStyle = LG.windowBg;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  ctx.restore();
+
+  // Inner highlight (top edge)
+  ctx.save();
+  const hlGrad = ctx.createLinearGradient(x, y, x, y + h * 0.15);
+  hlGrad.addColorStop(0, LG.glassHighlight);
+  hlGrad.addColorStop(1, "rgba(255, 255, 255, 0)");
+  ctx.fillStyle = hlGrad;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  ctx.restore();
+
+  // Border
+  ctx.save();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = LG.windowBorder;
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Inner glass card for sub-panels */
+function drawInnerGlass(ctx: Ctx, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.save();
+  ctx.fillStyle = LG.glassBg;
+  roundRect(ctx, x, y, w, h, r);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.lineWidth = 0.8;
+  ctx.strokeStyle = LG.glassBorder;
+  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ── Main Frame Drawing ─────────────────────────────────────
 
 function drawFrame(
   ctx: Ctx,
@@ -342,94 +425,164 @@ function drawFrame(
     totalMs: number;
   }
 ): void {
-  // Background — dark theme gradient
+  const s = W / 1920; // scale factor relative to 1080p
+
+  // ── Background ─────────────────────────────────────────
   const grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, "#1a1b2e");
-  grad.addColorStop(1, "#0f1019");
+  grad.addColorStop(0, LG.meshA);
+  grad.addColorStop(0.5, "#141422");
+  grad.addColorStop(1, LG.meshB);
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
-  // Decorative blobs
+  // Decorative mesh blobs
   ctx.save();
-  ctx.globalAlpha = 0.12;
-  ctx.fillStyle = "#5865f2";
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = LG.blobA;
   ctx.beginPath();
-  ctx.arc(W * 0.15, H * 0.85, H * 0.4, 0, Math.PI * 2);
+  ctx.arc(W * 0.12, H * 0.88, H * 0.45, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#a855f7";
+  ctx.fillStyle = LG.blobB;
   ctx.beginPath();
-  ctx.arc(W * 0.9, H * 0.1, H * 0.35, 0, Math.PI * 2);
+  ctx.arc(W * 0.92, H * 0.08, H * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = LG.blobC;
+  ctx.beginPath();
+  ctx.arc(W * 0.55, H * 0.5, H * 0.25, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // Title bar
-  const titleH = Math.round(H * 0.08);
-  drawGlassPanel(ctx, 16, 16, W - 32, titleH, 18);
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `bold ${Math.round(titleH * 0.5)}px BotUI`;
+  // ── macOS Window Frame ─────────────────────────────────
+  const winPad = Math.round(24 * s);
+  const winR = Math.round(16 * s);
+  const winX = winPad;
+  const winY = winPad;
+  const winW = W - winPad * 2;
+  const winH = H - winPad * 2;
+
+  drawGlassPanel(ctx, winX, winY, winW, winH, winR);
+
+  // ── Title Bar ──────────────────────────────────────────
+  const titleBarH = Math.round(44 * s);
+  const titleBarY = winY;
+
+  // Traffic light dots
+  const dotR = Math.round(6.5 * s);
+  const dotSpacing = Math.round(20 * s);
+  const dotStartX = winX + Math.round(20 * s);
+  const dotCY = titleBarY + titleBarH / 2;
+
+  drawDot(ctx, dotStartX, dotCY, dotR, LG.dotClose);
+  drawDot(ctx, dotStartX + dotSpacing, dotCY, dotR, LG.dotMinimize);
+  drawDot(ctx, dotStartX + dotSpacing * 2, dotCY, dotR, LG.dotMaximize);
+
+  // Title text (center)
+  ctx.save();
+  ctx.fillStyle = LG.textPrimary;
+  ctx.font = `600 ${Math.round(15 * s)}px BotUI`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(args.title, winX + winW / 2, dotCY);
+  ctx.restore();
+
+  // Time (right side)
+  ctx.save();
+  ctx.fillStyle = LG.textSecondary;
+  ctx.font = `${Math.round(13 * s)}px BotUI`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
-  ctx.fillText(args.title, W - 36, 16 + titleH / 2);
-
-  // Time
-  ctx.font = `${Math.round(titleH * 0.38)}px BotUI`;
-  ctx.fillStyle = "#8b8fa3";
-  ctx.textAlign = "left";
   ctx.fillText(
     `${formatTime(args.tMs)} / ${formatTime(args.totalMs)}`,
-    36,
-    16 + titleH / 2
+    winX + winW - Math.round(20 * s),
+    dotCY
   );
+  ctx.restore();
 
-  // Progress bar
-  const barY = 16 + titleH - 6;
-  const barW = W - 64;
-  const barH = 4;
-  const barX = 32;
+  // Title bar separator
   ctx.save();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
-  roundRect(ctx, barX, barY, barW, barH, 2);
-  ctx.fill();
-  const progress = args.totalMs > 0 ? args.tMs / args.totalMs : 0;
-  ctx.fillStyle = "#5865f2";
-  roundRect(ctx, barX, barY, Math.max(4, barW * progress), barH, 2);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(winX + winR, titleBarY + titleBarH);
+  ctx.lineTo(winX + winW - winR, titleBarY + titleBarH);
+  ctx.stroke();
+  ctx.restore();
+
+  // ── Progress Bar ───────────────────────────────────────
+  const barH = Math.round(3 * s);
+  const barPad = Math.round(20 * s);
+  const barY = titleBarY + titleBarH + Math.round(8 * s);
+  const barX = winX + barPad;
+  const barW = winW - barPad * 2;
+
+  // Track
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+  roundRect(ctx, barX, barY, barW, barH, barH / 2);
   ctx.fill();
   ctx.restore();
 
-  // Layout
-  const padTop = 16 + titleH + 14;
-  const chatW = Math.round(W * 0.28);
+  // Fill
+  const progress = args.totalMs > 0 ? args.tMs / args.totalMs : 0;
+  const fillW = Math.max(barH, barW * progress);
+  ctx.save();
+  const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  barGrad.addColorStop(0, LG.accent);
+  barGrad.addColorStop(1, "#a855f7");
+  ctx.fillStyle = barGrad;
+  roundRect(ctx, barX, barY, fillW, barH, barH / 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Glow dot at progress head
+  if (progress > 0.01) {
+    ctx.save();
+    ctx.fillStyle = LG.accent;
+    ctx.shadowColor = LG.accentGlow;
+    ctx.shadowBlur = 10 * s;
+    ctx.beginPath();
+    ctx.arc(barX + fillW, barY + barH / 2, Math.round(4 * s), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // ── Content Area ───────────────────────────────────────
+  const contentTop = barY + barH + Math.round(12 * s);
+  const contentPad = Math.round(16 * s);
+  const chatW = Math.round(winW * 0.28);
+
   const cardsArea = {
-    x: 16,
-    y: padTop,
-    w: W - 32 - chatW - 14,
-    h: H - padTop - 16,
+    x: winX + contentPad,
+    y: contentTop,
+    w: winW - contentPad * 2 - chatW - Math.round(12 * s),
+    h: winY + winH - contentTop - contentPad,
   };
   const chatArea = {
-    x: cardsArea.x + cardsArea.w + 14,
-    y: padTop,
+    x: cardsArea.x + cardsArea.w + Math.round(12 * s),
+    y: contentTop,
     w: chatW,
-    h: H - padTop - 16,
+    h: cardsArea.h,
   };
 
-  drawGlassPanel(ctx, cardsArea.x, cardsArea.y, cardsArea.w, cardsArea.h, 22);
-  drawGlassPanel(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, 22);
+  // Glass panels for content areas
+  drawInnerGlass(ctx, cardsArea.x, cardsArea.y, cardsArea.w, cardsArea.h, Math.round(14 * s));
+  drawInnerGlass(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, Math.round(14 * s));
 
-  // User cards grid
+  // ── User Cards Grid ────────────────────────────────────
   const users = args.users;
   const n = Math.max(1, users.length);
   const cols = n <= 2 ? n : n <= 4 ? 2 : n <= 9 ? 3 : 4;
   const rows = Math.ceil(n / cols);
-  const cardPad = 14;
+  const cardPad = Math.round(10 * s);
   const cardW = (cardsArea.w - cardPad * (cols + 1)) / cols;
   const cardH = (cardsArea.h - cardPad * (rows + 1)) / rows;
 
   users.forEach((u, i) => {
     const r = Math.floor(i / cols);
     const c = i % cols;
-    const x = cardsArea.x + cardPad + c * (cardW + cardPad);
-    const y = cardsArea.y + cardPad + r * (cardH + cardPad);
-    drawUserCard(ctx, x, y, cardW, cardH, {
+    const cx = cardsArea.x + cardPad + c * (cardW + cardPad);
+    const cy = cardsArea.y + cardPad + r * (cardH + cardPad);
+    drawUserCard(ctx, cx, cy, cardW, cardH, s, {
       username: u.username,
       img: args.avatarImgs.get(u.userId) ?? null,
       speaking: (args.envelope[u.userId] ?? 0) > 0.05,
@@ -438,55 +591,14 @@ function drawFrame(
     });
   });
 
-  // Chat feed
-  drawChatFeed(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, {
+  // ── Chat Feed (macOS Messages style) ───────────────────
+  drawChatFeed(ctx, chatArea.x, chatArea.y, chatArea.w, chatArea.h, s, {
     chat: args.chat,
     nowMs: args.tMs,
   });
 }
 
-function drawGlassPanel(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
-  ctx.shadowBlur = 22;
-  ctx.shadowOffsetY = 6;
-  ctx.fillStyle = "rgba(30, 32, 50, 0.75)";
-  roundRect(ctx, x, y, w, h, r);
-  ctx.fill();
-  ctx.restore();
-
-  ctx.save();
-  ctx.lineWidth = 1.2;
-  ctx.strokeStyle = "rgba(88, 101, 242, 0.25)";
-  roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
-  ctx.stroke();
-  ctx.restore();
-}
-
-function roundRect(
-  ctx: Ctx,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  r: number
-): void {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
-}
+// ── User Card ──────────────────────────────────────────────
 
 function drawUserCard(
   ctx: Ctx,
@@ -494,6 +606,7 @@ function drawUserCard(
   y: number,
   w: number,
   h: number,
+  s: number,
   args: {
     username: string;
     img: Image | null;
@@ -502,36 +615,51 @@ function drawUserCard(
     status: UserStatus;
   }
 ): void {
+  const r = Math.round(12 * s);
+
   // Card background
   ctx.save();
-  ctx.fillStyle = "rgba(30, 32, 50, 0.85)";
-  roundRect(ctx, x, y, w, h, 18);
+  ctx.fillStyle = args.speaking ? LG.cardSpeaking : LG.cardBg;
+  roundRect(ctx, x, y, w, h, r);
   ctx.fill();
   ctx.restore();
 
-  // Speaking glow
+  // Speaking glow ring
   if (args.speaking) {
     ctx.save();
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = Palette.speaking;
-    ctx.shadowColor = Palette.speaking;
-    ctx.shadowBlur = 18 + args.level * 18;
-    roundRect(ctx, x, y, w, h, 18);
+    ctx.lineWidth = Math.round(2.5 * s);
+    ctx.strokeStyle = LG.speakGreen;
+    ctx.shadowColor = LG.speakGlow;
+    ctx.shadowBlur = Math.round(14 * s) + args.level * Math.round(14 * s);
+    roundRect(ctx, x, y, w, h, r);
     ctx.stroke();
     ctx.restore();
   } else {
     ctx.save();
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(88, 101, 242, 0.15)";
-    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 18);
+    ctx.lineWidth = 0.8;
+    ctx.strokeStyle = LG.cardBorder;
+    roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
     ctx.stroke();
     ctx.restore();
   }
 
   // Avatar
-  const avSize = Math.min(w * 0.55, h * 0.55);
+  const avSize = Math.min(w * 0.52, h * 0.52);
   const ax = x + (w - avSize) / 2;
-  const ay = y + h * 0.12;
+  const ay = y + h * 0.1;
+
+  // Avatar shadow
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "#1c1c2e";
+  ctx.beginPath();
+  ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // Avatar image
   ctx.save();
   ctx.beginPath();
   ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
@@ -540,51 +668,71 @@ function drawUserCard(
   if (args.img) {
     ctx.drawImage(args.img, ax, ay, avSize, avSize);
   } else {
-    ctx.fillStyle = "#2a2d42";
+    ctx.fillStyle = "#2c2c3e";
     ctx.fillRect(ax, ay, avSize, avSize);
+    // Default avatar icon
+    ctx.fillStyle = LG.textTertiary;
+    ctx.font = `${Math.round(avSize * 0.45)}px BotUI`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("👤", ax + avSize / 2, ay + avSize / 2);
   }
   ctx.restore();
 
-  // Avatar border
+  // Avatar ring
   ctx.save();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = args.speaking ? Palette.speaking : "rgba(88, 101, 242, 0.3)";
+  ctx.lineWidth = Math.round(2.5 * s);
+  ctx.strokeStyle = args.speaking ? LG.speakGreen : "rgba(255, 255, 255, 0.12)";
+  if (args.speaking) {
+    ctx.shadowColor = LG.speakGlow;
+    ctx.shadowBlur = Math.round(8 * s);
+  }
   ctx.beginPath();
-  ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
+  ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2 + 1, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 
   // Username
   ctx.save();
-  ctx.fillStyle = "#e1e3ea";
-  const nameSize = Math.max(14, Math.round(h * 0.13));
-  ctx.font = `bold ${nameSize}px BotUI`;
+  ctx.fillStyle = LG.textPrimary;
+  const nameSize = Math.max(12, Math.round(h * 0.12));
+  ctx.font = `600 ${nameSize}px BotUI`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(args.username, x + w / 2, y + h * 0.78, w - 20);
+  ctx.fillText(args.username, x + w / 2, y + h * 0.76, w - Math.round(16 * s));
   ctx.restore();
 
-  // Status icons row
-  const iconY = y + h - 22;
+  // Status icons
+  const iconY = y + h - Math.round(18 * s);
   const icons: { color: string; label: string }[] = [];
   if (args.status.camera) icons.push({ color: Palette.cameraOn, label: "📹" });
   if (args.status.share) icons.push({ color: Palette.shareOn, label: "🖥" });
   if (args.status.selfMute || args.status.serverMute)
     icons.push({ color: Palette.muted, label: "🔇" });
-  const iconW = 22;
-  const gap = 6;
-  const totalIconW = icons.length * iconW + Math.max(0, icons.length - 1) * gap;
+  const iconW = Math.round(20 * s);
+  const iconGap = Math.round(6 * s);
+  const totalIconW = icons.length * iconW + Math.max(0, icons.length - 1) * iconGap;
   let ix = x + (w - totalIconW) / 2;
   for (const ic of icons) {
     ctx.save();
     ctx.fillStyle = ic.color;
+    ctx.globalAlpha = 0.8;
     ctx.beginPath();
     ctx.arc(ix + iconW / 2, iconY, iconW / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
-    ix += iconW + gap;
+    // Icon label
+    ctx.save();
+    ctx.font = `${Math.round(iconW * 0.65)}px BotUI`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(ic.label, ix + iconW / 2, iconY);
+    ctx.restore();
+    ix += iconW + iconGap;
   }
 }
+
+// ── Chat Feed (macOS Messages style) ───────────────────────
 
 function drawChatFeed(
   ctx: Ctx,
@@ -592,40 +740,71 @@ function drawChatFeed(
   y: number,
   w: number,
   h: number,
+  s: number,
   args: { chat: ChatMsg[]; nowMs: number }
 ): void {
   ctx.save();
   ctx.beginPath();
-  roundRect(ctx, x, y, w, h, 22);
+  roundRect(ctx, x, y, w, h, Math.round(14 * s));
   ctx.clip();
 
-  ctx.fillStyle = "#e1e3ea";
-  ctx.font = `bold 18px BotUI`;
-  ctx.textAlign = "right";
-  ctx.textBaseline = "top";
-  ctx.fillText("شات الروم | Chat", x + w - 14, y + 12);
+  // Header
+  const headerH = Math.round(36 * s);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.03)";
+  ctx.fillRect(x, y, w, headerH);
+  // Header separator
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(x + Math.round(12 * s), y + headerH);
+  ctx.lineTo(x + w - Math.round(12 * s), y + headerH);
+  ctx.stroke();
 
-  // Show messages whose ts <= nowMs, fade older ones
+  // Header title
+  ctx.fillStyle = LG.textPrimary;
+  ctx.font = `600 ${Math.round(13 * s)}px BotUI`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("💬 شات | Chat", x + w / 2, y + headerH / 2);
+
+  // Messages
   const visible = args.chat.filter((m) => m.ts <= args.nowMs);
-  const last = visible.slice(-12);
-  let cy = y + 44;
-  ctx.font = `14px BotUI`;
+  const last = visible.slice(-10);
+  const msgPad = Math.round(10 * s);
+  let cy = y + headerH + Math.round(8 * s);
+  const bubbleR = Math.round(10 * s);
+
   for (const m of last) {
     const age = args.nowMs - m.ts;
-    const fade = Math.min(1, Math.max(0.35, 1 - age / 60_000));
+    const fade = Math.min(1, Math.max(0.3, 1 - age / 60_000));
     ctx.globalAlpha = fade;
-    const lineH = 22;
-    ctx.fillStyle = "#a0a4b8";
-    ctx.font = `bold 13px BotUI`;
+
+    // Username
+    ctx.fillStyle = LG.textSecondary;
+    ctx.font = `600 ${Math.round(11 * s)}px BotUI`;
     ctx.textAlign = "right";
-    ctx.fillText(m.username, x + w - 14, cy);
-    cy += 16;
-    ctx.fillStyle = "#6e7287";
-    ctx.font = `13px BotUI`;
-    const text = m.content.length > 80 ? m.content.slice(0, 77) + "…" : m.content;
-    ctx.fillText(text, x + w - 14, cy, w - 28);
-    cy += lineH;
-    if (cy > y + h - 20) break;
+    ctx.textBaseline = "top";
+    ctx.fillText(m.username, x + w - msgPad, cy);
+    cy += Math.round(15 * s);
+
+    // Message bubble
+    const text = m.content.length > 60 ? m.content.slice(0, 57) + "…" : m.content;
+    const bubbleW = Math.min(w - msgPad * 2, Math.round(text.length * 7 * s) + Math.round(16 * s));
+    const bubbleH = Math.round(24 * s);
+    const bubbleX = x + w - msgPad - bubbleW;
+
+    ctx.fillStyle = LG.chatBubbleOther;
+    roundRect(ctx, bubbleX, cy, bubbleW, bubbleH, bubbleR);
+    ctx.fill();
+
+    ctx.fillStyle = LG.textPrimary;
+    ctx.font = `${Math.round(11.5 * s)}px BotUI`;
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, x + w - msgPad - Math.round(6 * s), cy + bubbleH / 2, bubbleW - Math.round(12 * s));
+
+    cy += bubbleH + Math.round(6 * s);
+    if (cy > y + h - Math.round(16 * s)) break;
   }
   ctx.globalAlpha = 1;
   ctx.restore();
