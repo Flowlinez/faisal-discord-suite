@@ -5,7 +5,6 @@ import {
   type EmbedFooterData,
 } from "discord.js";
 import { Palette } from "../utils/colors.js";
-import { L } from "../utils/locale.js";
 
 export interface BasicEmbedArgs {
   title?: string;
@@ -29,7 +28,7 @@ export function buildEmbed(args: BasicEmbedArgs): EmbedBuilder {
   if (args.image) e.setImage(args.image);
   if (args.author) e.setAuthor(args.author);
   if (args.footer) e.setFooter(args.footer);
-  else e.setFooter({ text: `${L.brand} Precision` });
+  else e.setFooter({ text: "✦" });
   if (args.url) e.setURL(args.url);
   if (args.timestamp) e.setTimestamp(new Date());
   return e;

@@ -44,7 +44,7 @@ export async function renderSetupPanel(guild: Guild) {
         inline: false,
       },
     ],
-    footer: { text: "F · S ✦ Precision" },
+    footer: { text: "✦" },
   });
 
   return {

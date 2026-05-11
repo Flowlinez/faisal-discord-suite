@@ -2,7 +2,7 @@
 // Format: "العربي | English" — keeps the interface accessible to all members.
 
 export const L = {
-  brand: "F · S ✦",
+  brand: "✦",
 
   // ── Status Messages ───────────────────────────────────────
   ok: "تم بنجاح | Done",

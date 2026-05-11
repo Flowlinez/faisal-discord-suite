@@ -74,7 +74,7 @@ export const helpCommand: SlashCommand = {
                 "`/camera on|off` — كاميرا | Camera",
             },
           ],
-          footer: { text: "F · S ✦ Precision" },
+          footer: { text: "✦" },
           timestamp: true,
         }),
       ],
