@@ -89,7 +89,7 @@ export function makeRPSChoice(
   gameId: string,
   userId: string,
   choice: RPSChoice
-): { ok: boolean; reason?: string; game: RPSGame | null; roundDone: boolean } {
+): { ok: boolean; reason?: string; game: RPSGame | null; roundDone: boolean; p1Choice?: RPSChoice; p2Choice?: RPSChoice } {
   const g = games.get(gameId);
   if (!g) return { ok: false, reason: "اللعبة غير موجودة | Game not found.", game: null, roundDone: false };
   if (g.status !== "active") return { ok: false, reason: "اللعبة منتهية | Game is over.", game: g, roundDone: false };
@@ -105,8 +105,10 @@ export function makeRPSChoice(
   }
 
   if (g.player1.choice && g.player2.choice) {
+    const p1c = g.player1.choice;
+    const p2c = g.player2.choice;
     resolveRound(g);
-    return { ok: true, game: g, roundDone: true };
+    return { ok: true, game: g, roundDone: true, p1Choice: p1c, p2Choice: p2c };
   }
   return { ok: true, game: g, roundDone: false };
 }

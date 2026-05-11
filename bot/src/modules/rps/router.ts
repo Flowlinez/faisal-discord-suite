@@ -117,9 +117,9 @@ async function choiceBtn(
   }
 
   const game = result.game;
-  const p1Choice = choiceEmoji(game.player1.choice ?? "rock");
-  const p2Choice = choiceEmoji(game.player2.choice ?? "rock");
-  const prevRound = game.currentRound - 1 || game.rounds;
+  const p1Choice = choiceEmoji(result.p1Choice!);
+  const p2Choice = choiceEmoji(result.p2Choice!);
+  const prevRound = game.status === "finished" ? game.currentRound : game.currentRound - 1;
 
   if (game.status === "finished") {
     if (game.winner === "draw") {
