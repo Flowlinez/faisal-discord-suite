@@ -7,6 +7,7 @@ export const IDS = {
     selectPinChannel: "setup:pin_channel",
     selectDefaultDuration: "setup:default_duration",
     selectRegion: "setup:region",
+    selectQuality: "setup:quality",
     toggleAutoPin: "setup:toggle_pin",
     toggleAutoRegion: "setup:toggle_region",
     close: "setup:close",
@@ -23,7 +24,7 @@ export const IDS = {
   editor: {
     trimStart: "edit:trim_start",
     trimEnd: "edit:trim_end",
-    userToggle: "edit:user_toggle", // followed by :userId
+    userToggle: "edit:user_toggle",
     userVolume: "edit:user_volume",
     shareVolume: "edit:share_volume",
     render: "edit:render",
@@ -31,8 +32,20 @@ export const IDS = {
   },
   xo: {
     join: "xo:join",
-    cell: "xo:cell", // followed by :index
+    cell: "xo:cell",
     cancel: "xo:cancel",
+  },
+  c4: {
+    join: "c4:join",
+    col: "c4:col",
+    cancel: "c4:cancel",
+  },
+  rps: {
+    join: "rps:join",
+    rock: "rps:rock",
+    paper: "rps:paper",
+    scissors: "rps:scissors",
+    cancel: "rps:cancel",
   },
   soundboard: {
     record: "sb:record",
@@ -41,6 +54,13 @@ export const IDS = {
     save: "sb:save",
     discard: "sb:discard",
     modal: "sb:modal",
+  },
+  rgn: {
+    select: "rgn:select",
+  },
+  voiceFix: {
+    reconnect: "vfix:reconnect",
+    cycleRegion: "vfix:cycle_region",
   },
 } as const;
 

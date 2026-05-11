@@ -4,6 +4,8 @@ import { setupCommand } from "./setup.js";
 import { recordCommand } from "./record.js";
 import { clipCommand } from "./clip.js";
 import { xoCommand } from "./xo.js";
+import { connect4Command } from "./connect4.js";
+import { rpsCommand } from "./rps.js";
 import { pointsCommand } from "./points.js";
 import { soundboardCommand } from "./soundboard.js";
 import { vipCommand } from "./vip.js";
@@ -12,6 +14,8 @@ import { accountCommand } from "./account.js";
 import { voiceCommand } from "./voice.js";
 import { shareCommand } from "./share.js";
 import { cameraCommand } from "./camera.js";
+import { rgnCommand } from "./rgn.js";
+import { voicefixCommand } from "./voicefix.js";
 
 export async function registerAllCommands(client: Client): Promise<void> {
   const all = [
@@ -19,6 +23,8 @@ export async function registerAllCommands(client: Client): Promise<void> {
     recordCommand,
     clipCommand,
     xoCommand,
+    connect4Command,
+    rpsCommand,
     pointsCommand,
     soundboardCommand,
     vipCommand,
@@ -26,6 +32,8 @@ export async function registerAllCommands(client: Client): Promise<void> {
     voiceCommand,
     shareCommand,
     cameraCommand,
+    rgnCommand,
+    voicefixCommand,
     helpCommand,
   ];
   for (const cmd of all) {

@@ -342,7 +342,7 @@ function drawFrame(
     totalMs: number;
   }
 ): void {
-  // Background — soft gradient (Liquid Glass)
+  // Background — soft gradient
   const grad = ctx.createLinearGradient(0, 0, W, H);
   grad.addColorStop(0, "#eef3fb");
   grad.addColorStop(1, "#dde6f3");

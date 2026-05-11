@@ -10,54 +10,72 @@ import { Palette } from "../utils/colors.js";
 export const helpCommand: SlashCommand = {
   data: new SlashCommandBuilder()
     .setName("help")
-    .setDescription("قائمة الأوامر والمميزات")
+    .setDescription("قائمة الأوامر والمميزات | Commands & features guide")
     .setDMPermission(false),
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.reply({
       embeds: [
         buildEmbed({
-          title: "Faisal Discord Suite — دليل الاستخدام",
-          color: Palette.accent,
+          title: "📖 دليل الاستخدام | User Guide",
+          color: Palette.primary,
           fields: [
             {
-              name: "الإعدادات",
+              name: "⚙️ الإعدادات | Settings",
               value:
-                "`/setup` — لوحة الإعدادات الكاملة (قنوات، Region، Auto-Pin، جودة الفيديو)",
+                "`/setup` — لوحة الإعدادات الكاملة | Full settings panel\n" +
+                "↳ قنوات، ريجون، تثبيت، جودة | channels, region, pin, quality",
             },
             {
-              name: "التسجيل",
+              name: "🎙️ التسجيل | Recording",
               value:
-                "`/record panel` — نشر لوحة التحكم\n`/record start` / `/record stop` — تحكم سريع\n`/record status` — حالة التسجيل\n`/clip [minutes]` — اقتطاع من البافر",
+                "`/record panel` — لوحة التحكم | Control panel\n" +
+                "`/record start` · `/record stop` — تحكم سريع | Quick control\n" +
+                "`/record status` — حالة التسجيل | Status\n" +
+                "`/clip [minutes]` — اقتطاع من البافر | Clip from buffer",
             },
             {
-              name: "الألعاب",
+              name: "🎮 الألعاب | Games",
               value:
-                "`/xo [rounds]` — افتح لوبي XO\n`/points` — نقاطك\n`/points leaderboard:true` — المتصدّرون",
+                "`/xo [rounds]` — لعبة XO (إكس أو) | Tic-Tac-Toe\n" +
+                "`/connect4` — كونكت 4 | Connect Four\n" +
+                "`/rps [rounds]` — حجر ورقة مقص | Rock Paper Scissors\n" +
+                "`/points` — نقاطك | Your scores\n" +
+                "`/points leaderboard:true` — المتصدّرون | Leaderboard",
             },
             {
-              name: "الساوندبورد",
+              name: "🌍 الريجون والصوت | Region & Voice",
               value:
-                "`/soundboard record user:@person` — سجّل صوت شخص (≤5ث)\n`/soundboard stop` — إيقاف",
+                "`/rgn [region]` — تبديل الريجون بسرعة | Quick region switch\n" +
+                "`/voicefix reconnect` — إعادة اتصال | Reconnect\n" +
+                "`/voicefix cycle` — تدوير الريجون | Cycle region\n" +
+                "`/voicefix status` — حالة الاتصال | Connection status\n" +
+                "`/voicefix panel` — لوحة إصلاح | Fix panel",
             },
             {
-              name: "VIP (للمالك)",
+              name: "🔊 الساوندبورد | Soundboard",
               value:
-                "`/vip avatar change` / `/vip name change` / `/vip banner change`",
+                "`/soundboard record user:@person` — تسجيل صوت (5ث) | Record (5s)\n" +
+                "`/soundboard stop` — إيقاف | Stop",
             },
             {
-              name: "حساب الـ Companion (للمالك — يحتاج تطبيق Windows)",
+              name: "👑 VIP (للمالك | Owner)",
               value:
-                "`/account status` — حالة الـ companion\n" +
-                "`/account name` / `/account display-name` / `/account bio`\n" +
-                "`/account avatar` / `/account banner`\n" +
-                "`/account presence` — online/dnd/idle/invisible\n" +
-                "`/account custom-status` — نص + إيموجي\n" +
-                "`/voice join|leave|mute` — تحكم بالروم\n" +
-                "`/share start|stop|record-start|record-stop|status` — سكرين شير + تسجيل\n" +
-                "`/camera on|off` — كاميرا",
+                "`/vip avatar change` · `/vip name change` · `/vip banner change`",
+            },
+            {
+              name: "👤 الـ Companion (للمالك | Owner — Windows)",
+              value:
+                "`/account status` — حالة | Status\n" +
+                "`/account name` · `/account display-name` · `/account bio`\n" +
+                "`/account avatar` · `/account banner` · `/account presence`\n" +
+                "`/account custom-status` — نص + إيموجي | Text + emoji\n" +
+                "`/voice join|leave|mute` — تحكم بالروم | Voice control\n" +
+                "`/share start|stop|record-start|record-stop|status` — شير | Share\n" +
+                "`/camera on|off` — كاميرا | Camera",
             },
           ],
-          footer: { text: "Faisal Suite" },
+          footer: { text: "F · S ✦ Precision" },
+          timestamp: true,
         }),
       ],
       flags: MessageFlags.Ephemeral,

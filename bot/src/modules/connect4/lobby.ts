@@ -7,47 +7,44 @@ import {
 import { IDS } from "../../utils/ids.js";
 import { L } from "../../utils/locale.js";
 
-export interface XoLobby {
+export interface C4Lobby {
   id: string;
   guildId: string;
   channelId: string;
   hostId: Snowflake;
   joiners: Snowflake[];
-  totalRounds: number;
   startedAt: number;
 }
 
-const lobbies = new Map<string, XoLobby>();
+const lobbies = new Map<string, C4Lobby>();
 
-export function createLobby(args: {
+export function createC4Lobby(args: {
   id: string;
   guildId: string;
   channelId: string;
   hostId: string;
-  totalRounds: number;
-}): XoLobby {
-  const l: XoLobby = {
+}): C4Lobby {
+  const l: C4Lobby = {
     id: args.id,
     guildId: args.guildId,
     channelId: args.channelId,
     hostId: args.hostId,
     joiners: [args.hostId],
-    totalRounds: args.totalRounds,
     startedAt: Date.now(),
   };
   lobbies.set(l.id, l);
   return l;
 }
 
-export function getLobby(id: string): XoLobby | undefined {
+export function getC4Lobby(id: string): C4Lobby | undefined {
   return lobbies.get(id);
 }
 
-export function destroyLobby(id: string): void {
+export function destroyC4Lobby(id: string): void {
   lobbies.delete(id);
 }
 
-export function joinLobby(id: string, userId: string): XoLobby | null {
+export function joinC4Lobby(id: string, userId: string): C4Lobby | null {
   const l = lobbies.get(id);
   if (!l) return null;
   if (l.joiners.includes(userId)) return l;
@@ -55,17 +52,17 @@ export function joinLobby(id: string, userId: string): XoLobby | null {
   return l;
 }
 
-export function lobbyRow(id: string): ActionRowBuilder<ButtonBuilder> {
+export function c4LobbyRow(id: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`${IDS.xo.join}:${id}`)
+      .setCustomId(`${IDS.c4.join}:${id}`)
       .setStyle(ButtonStyle.Success)
-      .setLabel(L.xoJoin)
-      .setEmoji("🎮"),
+      .setLabel(L.c4Join)
+      .setEmoji("🟡"),
     new ButtonBuilder()
-      .setCustomId(`${IDS.xo.cancel}:${id}`)
+      .setCustomId(`${IDS.c4.cancel}:${id}`)
       .setStyle(ButtonStyle.Danger)
-      .setLabel(L.xoCancel)
+      .setLabel(L.c4Cancel)
       .setEmoji("✖️")
   );
 }
