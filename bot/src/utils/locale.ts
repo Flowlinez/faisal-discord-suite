@@ -19,6 +19,18 @@ export const L = {
   notRecording: "ما فيه تسجيل شغّال حالياً | No active recording.",
   alreadyRecording: "في تسجيل شغّال فعلاً | Already recording.",
   saved: "تم الحفظ | Saved.",
+  recPaused: "التسجيل موقّف مؤقتاً | Recording paused.",
+  recResumed: "استمرار التسجيل | Recording resumed.",
+  recNotPaused: "التسجيل مو موقّف | Recording is not paused.",
+  recAlreadyPaused: "التسجيل موقّف فعلاً | Already paused.",
+  recNoActiveClip: "ما فيه تسجيل شغّال — لازم تبدأ تسجيل عشان تقدر تأخذ Clip | No active recording — start one first.",
+  recPreparingClip: (m: number) => `جارٍ تجهيز Clip آخر ${m} دقيقة — يستغرق قليلاً… | Preparing clip of last ${m} min…`,
+  recRenderFailed: "فشل تركيب الفيديو — راجع سجلات البوت | Video render failed.",
+  recNoChannel: "ما لقيت قناة التسجيل — حدد قناة نصية من /setup | Recording channel not set — use /setup.",
+  recFileTooLarge: (mb: number) => `⚠️ حجم الفيديو ${mb}MB أكبر من حد الرفع | File ${mb}MB exceeds upload limit.`,
+  recPosted: (title: string, dur: string) => `🎬 ${title} (${dur})`,
+  recPeople: (n: number) => `الأشخاص: ${n} | Participants: ${n}`,
+  recCleanedUp: (n: number) => `تم حذف ${n} تسجيلات قديمة | ${n} old recordings cleaned up.`,
 
   // ── Stay Connected ────────────────────────────────────────
   pinned: "البوت مثبّت في الروم | Bot pinned to channel.",
@@ -28,8 +40,11 @@ export const L = {
   recPanel: "لوحة التسجيل | Recording Panel",
   recStart: "بدء التسجيل | Start Recording",
   recStop: "إيقاف التسجيل | Stop Recording",
+  recPause: "إيقاف مؤقت | Pause",
+  recResume: "استمرار | Resume",
   recStatus: "حالة التسجيل | Recording Status",
   clipLast: (m: number) => `كليب آخر ${m} د | Clip last ${m}m`,
+  clipSelect: "اختر مدة الكليب | Select clip duration",
   recSettings: "الإعدادات | Settings",
 
   // ── Setup Panel ───────────────────────────────────────────
@@ -87,8 +102,15 @@ export const L = {
   // ── Editor ────────────────────────────────────────────────
   edTrimStart: "قص من البداية | Trim Start",
   edTrimEnd: "قص من النهاية | Trim End",
+  edUserVolume: "صوت شخص | User Volume",
+  edShareVolume: "صوت الشير | Share Volume",
+  edMuteSelect: "اختر شخص للميوت | Select user to mute",
   edRename: "تغيير الاسم | Rename",
-  edRender: "نسخة معدّلة | Render Edit",
+  edRender: "نسخة معدّلة 🎬 | Render Edit 🎬",
+  edUpdated: "تم تحديث إعدادات التعديل — اضغط 'نسخة معدّلة' لتركيب الفيديو | Settings updated — press render.",
+  edClipNotFound: "الكليب غير موجود في الذاكرة | Clip not found in memory.",
+  edRenderFailed: "فشل تركيب النسخة المعدّلة | Edited render failed.",
+  edReady: "جاهز | Ready",
 
   // ── Region ────────────────────────────────────────────────
   rgnSwitched: (from: string, to: string) => `تم تبديل الريجون: ${from} → ${to} | Region switched: ${from} → ${to}`,

@@ -52,9 +52,9 @@ export interface RenderArgs {
 }
 
 const QUALITY = {
-  low: { width: 854, height: 480, fps: 12, audioBitrate: "96k", videoBitrate: "600k" },
-  medium: { width: 1280, height: 720, fps: 15, audioBitrate: "128k", videoBitrate: "1500k" },
-  high: { width: 1920, height: 1080, fps: 24, audioBitrate: "192k", videoBitrate: "3500k" },
+  low: { width: 854, height: 480, fps: 15, audioBitrate: "128k", videoBitrate: "800k" },
+  medium: { width: 1280, height: 720, fps: 24, audioBitrate: "160k", videoBitrate: "2000k" },
+  high: { width: 1920, height: 1080, fps: 30, audioBitrate: "192k", videoBitrate: "4500k" },
 } as const;
 
 /**
@@ -108,7 +108,7 @@ async function mixAudio(args: RenderArgs): Promise<string> {
   return mixedPath;
 }
 
-interface SpeakingState {
+interface _SpeakingState {
   [userId: string]: boolean;
 }
 
@@ -342,21 +342,21 @@ function drawFrame(
     totalMs: number;
   }
 ): void {
-  // Background — soft gradient
+  // Background — dark theme gradient
   const grad = ctx.createLinearGradient(0, 0, W, H);
-  grad.addColorStop(0, "#eef3fb");
-  grad.addColorStop(1, "#dde6f3");
+  grad.addColorStop(0, "#1a1b2e");
+  grad.addColorStop(1, "#0f1019");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, W, H);
 
   // Decorative blobs
   ctx.save();
-  ctx.globalAlpha = 0.35;
-  ctx.fillStyle = "#c8d6ec";
+  ctx.globalAlpha = 0.12;
+  ctx.fillStyle = "#5865f2";
   ctx.beginPath();
   ctx.arc(W * 0.15, H * 0.85, H * 0.4, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = "#dcd2ec";
+  ctx.fillStyle = "#a855f7";
   ctx.beginPath();
   ctx.arc(W * 0.9, H * 0.1, H * 0.35, 0, Math.PI * 2);
   ctx.fill();
@@ -365,7 +365,7 @@ function drawFrame(
   // Title bar
   const titleH = Math.round(H * 0.08);
   drawGlassPanel(ctx, 16, 16, W - 32, titleH, 18);
-  ctx.fillStyle = Palette.text;
+  ctx.fillStyle = "#ffffff";
   ctx.font = `bold ${Math.round(titleH * 0.5)}px BotUI`;
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
@@ -373,13 +373,28 @@ function drawFrame(
 
   // Time
   ctx.font = `${Math.round(titleH * 0.38)}px BotUI`;
-  ctx.fillStyle = Palette.textSoft;
+  ctx.fillStyle = "#8b8fa3";
   ctx.textAlign = "left";
   ctx.fillText(
     `${formatTime(args.tMs)} / ${formatTime(args.totalMs)}`,
     36,
     16 + titleH / 2
   );
+
+  // Progress bar
+  const barY = 16 + titleH - 6;
+  const barW = W - 64;
+  const barH = 4;
+  const barX = 32;
+  ctx.save();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+  roundRect(ctx, barX, barY, barW, barH, 2);
+  ctx.fill();
+  const progress = args.totalMs > 0 ? args.tMs / args.totalMs : 0;
+  ctx.fillStyle = "#5865f2";
+  roundRect(ctx, barX, barY, Math.max(4, barW * progress), barH, 2);
+  ctx.fill();
+  ctx.restore();
 
   // Layout
   const padTop = 16 + titleH + 14;
@@ -439,17 +454,17 @@ function drawGlassPanel(
   r: number
 ): void {
   ctx.save();
-  ctx.shadowColor = "rgba(60, 80, 120, 0.18)";
+  ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
   ctx.shadowBlur = 22;
   ctx.shadowOffsetY = 6;
-  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.fillStyle = "rgba(30, 32, 50, 0.75)";
   roundRect(ctx, x, y, w, h, r);
   ctx.fill();
   ctx.restore();
 
   ctx.save();
   ctx.lineWidth = 1.2;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.strokeStyle = "rgba(88, 101, 242, 0.25)";
   roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, r);
   ctx.stroke();
   ctx.restore();
@@ -489,7 +504,7 @@ function drawUserCard(
 ): void {
   // Card background
   ctx.save();
-  ctx.fillStyle = "rgba(255, 255, 255, 0.75)";
+  ctx.fillStyle = "rgba(30, 32, 50, 0.85)";
   roundRect(ctx, x, y, w, h, 18);
   ctx.fill();
   ctx.restore();
@@ -507,7 +522,7 @@ function drawUserCard(
   } else {
     ctx.save();
     ctx.lineWidth = 1;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.strokeStyle = "rgba(88, 101, 242, 0.15)";
     roundRect(ctx, x + 0.5, y + 0.5, w - 1, h - 1, 18);
     ctx.stroke();
     ctx.restore();
@@ -525,7 +540,7 @@ function drawUserCard(
   if (args.img) {
     ctx.drawImage(args.img, ax, ay, avSize, avSize);
   } else {
-    ctx.fillStyle = "#cdd6e4";
+    ctx.fillStyle = "#2a2d42";
     ctx.fillRect(ax, ay, avSize, avSize);
   }
   ctx.restore();
@@ -533,7 +548,7 @@ function drawUserCard(
   // Avatar border
   ctx.save();
   ctx.lineWidth = 3;
-  ctx.strokeStyle = args.speaking ? Palette.speaking : "rgba(255, 255, 255, 0.95)";
+  ctx.strokeStyle = args.speaking ? Palette.speaking : "rgba(88, 101, 242, 0.3)";
   ctx.beginPath();
   ctx.arc(ax + avSize / 2, ay + avSize / 2, avSize / 2, 0, Math.PI * 2);
   ctx.stroke();
@@ -541,7 +556,7 @@ function drawUserCard(
 
   // Username
   ctx.save();
-  ctx.fillStyle = Palette.text;
+  ctx.fillStyle = "#e1e3ea";
   const nameSize = Math.max(14, Math.round(h * 0.13));
   ctx.font = `bold ${nameSize}px BotUI`;
   ctx.textAlign = "center";
@@ -584,11 +599,11 @@ function drawChatFeed(
   roundRect(ctx, x, y, w, h, 22);
   ctx.clip();
 
-  ctx.fillStyle = Palette.text;
+  ctx.fillStyle = "#e1e3ea";
   ctx.font = `bold 18px BotUI`;
   ctx.textAlign = "right";
   ctx.textBaseline = "top";
-  ctx.fillText("شات الروم", x + w - 14, y + 12);
+  ctx.fillText("شات الروم | Chat", x + w - 14, y + 12);
 
   // Show messages whose ts <= nowMs, fade older ones
   const visible = args.chat.filter((m) => m.ts <= args.nowMs);
@@ -600,12 +615,12 @@ function drawChatFeed(
     const fade = Math.min(1, Math.max(0.35, 1 - age / 60_000));
     ctx.globalAlpha = fade;
     const lineH = 22;
-    ctx.fillStyle = Palette.text;
+    ctx.fillStyle = "#a0a4b8";
     ctx.font = `bold 13px BotUI`;
     ctx.textAlign = "right";
     ctx.fillText(m.username, x + w - 14, cy);
     cy += 16;
-    ctx.fillStyle = Palette.textSoft;
+    ctx.fillStyle = "#6e7287";
     ctx.font = `13px BotUI`;
     const text = m.content.length > 80 ? m.content.slice(0, 77) + "…" : m.content;
     ctx.fillText(text, x + w - 14, cy, w - 28);

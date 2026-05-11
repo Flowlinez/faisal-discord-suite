@@ -3,6 +3,7 @@ import {
   ChannelType,
   type Interaction,
   type ButtonInteraction,
+  type StringSelectMenuInteraction,
   type GuildMember,
   type VoiceBasedChannel,
 } from "discord.js";
@@ -13,7 +14,7 @@ import { L } from "../../utils/locale.js";
 import { logger } from "../../utils/logger.js";
 import { recordingManager } from "./state.js";
 import { getGuildSettings } from "../../db/settings.js";
-import { recordPanelRow } from "../../ui/components.js";
+import { recordPanelRows } from "../../ui/components.js";
 import { buildEmbed, errorEmbed, successEmbed } from "../../ui/embeds.js";
 import { renderRecording } from "./renderer.js";
 import { saveClip } from "./clipsStore.js";
@@ -23,20 +24,36 @@ import { Palette } from "../../utils/colors.js";
 const log = logger.child({ mod: "rec-router" });
 
 export async function recordRouter(interaction: Interaction): Promise<void> {
-  if (!interaction.isButton() || !interaction.guild) return;
+  if (!interaction.guild) return;
+
+  // Handle select menu for clip duration
+  if (interaction.isStringSelectMenu()) {
+    const { action } = parseId(interaction.customId);
+    if (action === "clip_select") {
+      const minutes = parseInt(interaction.values[0] ?? "5", 10);
+      return clipFromSelect(interaction, minutes);
+    }
+    return;
+  }
+
+  if (!interaction.isButton()) return;
   const { action, args } = parseId(interaction.customId);
   switch (action) {
     case "start":
       return startBtn(interaction);
     case "stop":
       return stopBtn(interaction);
+    case "pause":
+      return pauseBtn(interaction);
+    case "resume":
+      return resumeBtn(interaction);
     case "clip":
       return clipBtn(interaction, parseInt(args[0] ?? "5", 10));
     case "open_settings":
       await interaction.reply({
         embeds: [buildEmbed({
-          title: "الإعدادات",
-          description: "استخدم الأمر `/setup` لفتح لوحة الإعدادات الكاملة.",
+          title: "الإعدادات | Settings",
+          description: "استخدم الأمر `/setup` لفتح لوحة الإعدادات الكاملة.\nUse `/setup` to open the full settings panel.",
           color: Palette.accent,
         })],
         flags: MessageFlags.Ephemeral,
@@ -53,7 +70,7 @@ async function startBtn(interaction: ButtonInteraction): Promise<void> {
   const channel = await resolveTargetChannel(interaction);
   if (!channel) {
     await interaction.reply({
-      embeds: [errorEmbed("ما لقيت روم صوتي — حدد الروم من /setup أو ادخل أنت روم صوتي قبل ما تضغط.")],
+      embeds: [errorEmbed("ما لقيت روم صوتي — حدد الروم من /setup أو ادخل أنت روم صوتي قبل ما تضغط.\nNo voice channel found — set one in /setup or join a voice channel first.")],
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -65,9 +82,11 @@ async function startBtn(interaction: ButtonInteraction): Promise<void> {
       startedBy: member?.id ?? interaction.user.id,
     });
     await interaction.editReply({
-      embeds: [successEmbed(`بدأت التسجيل في <#${channel.id}>.`, "التسجيل شغّال")],
+      embeds: [successEmbed(
+        `بدأت التسجيل في <#${channel.id}> | Recording started in <#${channel.id}>.`,
+        L.recording
+      )],
     });
-    // Update the public control message if it exists
     try {
       await refreshPanelMessage(interaction);
     } catch {
@@ -88,15 +107,57 @@ async function stopBtn(interaction: ButtonInteraction): Promise<void> {
     await interaction.editReply({ embeds: [errorEmbed(L.notRecording)] });
     return;
   }
+  const dur = L.formatDuration(Math.floor((Date.now() - session.startedAt) / 1000));
   await interaction.editReply({
-    embeds: [successEmbed(`تم إيقاف التسجيل — المدة: ${L.formatDuration(Math.floor((Date.now() - session.startedAt) / 1000))}`)],
+    embeds: [successEmbed(`تم إيقاف التسجيل — المدة: ${dur}\nRecording stopped — duration: ${dur}`)],
   });
-  // Save full session as a clip equivalent for editing
   await finalizeAndPost(interaction, {
     sessionId: session.id,
     durationSec: Math.floor((Date.now() - session.startedAt) / 1000),
     sliceDir: session.sessionDir,
-    title: `تسجيل ${new Date().toLocaleString("ar-SA")}`,
+    title: `تسجيل | Recording — ${new Date().toLocaleString("ar-SA")}`,
+  });
+  try {
+    await refreshPanelMessage(interaction);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function pauseBtn(interaction: ButtonInteraction): Promise<void> {
+  if (!interaction.guild) return;
+  const ok = recordingManager.pause(interaction.guild.id);
+  if (!ok) {
+    await interaction.reply({
+      embeds: [errorEmbed(L.recAlreadyPaused)],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  await interaction.reply({
+    embeds: [successEmbed(L.recPaused)],
+    flags: MessageFlags.Ephemeral,
+  });
+  try {
+    await refreshPanelMessage(interaction);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function resumeBtn(interaction: ButtonInteraction): Promise<void> {
+  if (!interaction.guild) return;
+  const ok = recordingManager.resume(interaction.guild.id);
+  if (!ok) {
+    await interaction.reply({
+      embeds: [errorEmbed(L.recNotPaused)],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  await interaction.reply({
+    embeds: [successEmbed(L.recResumed)],
+    flags: MessageFlags.Ephemeral,
   });
   try {
     await refreshPanelMessage(interaction);
@@ -110,12 +171,34 @@ async function clipBtn(interaction: ButtonInteraction, minutes: number): Promise
   const session = recordingManager.get(interaction.guild.id);
   if (!session) {
     await interaction.reply({
-      embeds: [errorEmbed("ما فيه تسجيل شغّال — لازم تبدأ تسجيل عشان تقدر تأخذ Clip.")],
+      embeds: [errorEmbed(L.recNoActiveClip)],
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await processClip(interaction, session, minutes);
+}
+
+async function clipFromSelect(interaction: StringSelectMenuInteraction, minutes: number): Promise<void> {
+  if (!interaction.guild) return;
+  const session = recordingManager.get(interaction.guild.id);
+  if (!session) {
+    await interaction.reply({
+      embeds: [errorEmbed(L.recNoActiveClip)],
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  await processClip(interaction, session, minutes);
+}
+
+async function processClip(
+  interaction: ButtonInteraction | StringSelectMenuInteraction,
+  session: ReturnType<typeof recordingManager.get> & object,
+  minutes: number
+): Promise<void> {
   const durationSec = Math.max(5, Math.min(minutes * 60, session.bufferMinutes * 60));
   const outDir = path.join(session.sessionDir, "clips", `${Date.now()}`);
   fs.mkdirSync(outDir, { recursive: true });
@@ -129,20 +212,20 @@ async function clipBtn(interaction: ButtonInteraction, minutes: number): Promise
     Date.now() - session.startedAt
   );
   await interaction.editReply({
-    embeds: [successEmbed(`جارٍ تجهيز Clip آخر ${minutes} دقيقة — يستغرق قليلاً…`)],
+    embeds: [successEmbed(L.recPreparingClip(minutes))],
   });
 
   await finalizeAndPost(interaction, {
     sessionId: session.id,
     durationSec,
     sliceDir: outDir,
-    title: `Clip — آخر ${minutes} دقيقة`,
+    title: `Clip — آخر ${minutes} دقيقة | Last ${minutes} min`,
     presliced: { users, events, chat },
   });
 }
 
 async function finalizeAndPost(
-  interaction: ButtonInteraction,
+  interaction: ButtonInteraction | StringSelectMenuInteraction,
   args: {
     sessionId: string;
     durationSec: number;
@@ -166,7 +249,6 @@ async function finalizeAndPost(
     events = args.presliced.events;
     chat = args.presliced.chat;
   } else {
-    // Use entire buffer
     const session = recordingManager.get(interaction.guild.id);
     if (session) {
       users = session.buffer.sliceLastSeconds(args.durationSec, args.sliceDir);
@@ -194,18 +276,17 @@ async function finalizeAndPost(
   } catch (err) {
     log.error({ err }, "render error");
     await interaction.followUp({
-      embeds: [errorEmbed("فشل تركيب الفيديو — راجع سجلات البوت.")],
+      embeds: [errorEmbed(L.recRenderFailed)],
       flags: MessageFlags.Ephemeral,
     });
     return;
   }
 
-  // Post in a private thread in the configured record channel
   const recChannelId = settings.record_channel_id ?? interaction.channelId;
   const channel = interaction.guild.channels.cache.get(recChannelId);
   if (!channel || channel.type !== ChannelType.GuildText) {
     await interaction.followUp({
-      embeds: [errorEmbed("ما لقيت قناة التسجيل — حدد قناة نصية من /setup.")],
+      embeds: [errorEmbed(L.recNoChannel)],
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -236,19 +317,18 @@ async function finalizeAndPost(
     chat,
   });
 
-  // Try to attach the file
   try {
     const stat = fs.statSync(outFile);
-    // 25MB default upload limit; with boost up to 100MB
     const sizeMb = stat.size / (1024 * 1024);
+    const durStr = L.formatDuration(args.durationSec);
     if (sizeMb < 24) {
       await thread.send({
-        content: `<@${interaction.user.id}> 🎬 ${args.title} (${L.formatDuration(args.durationSec)})`,
+        content: `<@${interaction.user.id}> ${L.recPosted(args.title, durStr)}`,
         files: [outFile],
         embeds: [
           buildEmbed({
             title: args.title,
-            description: `الأشخاص: ${users.length} • المدة: ${L.formatDuration(args.durationSec)}`,
+            description: `${L.recPeople(users.length)} • ${durStr}`,
             color: Palette.accent,
           }),
         ],
@@ -256,11 +336,11 @@ async function finalizeAndPost(
       });
     } else {
       await thread.send({
-        content: `<@${interaction.user.id}> 🎬 ${args.title} (${L.formatDuration(args.durationSec)})\n\n⚠️ حجم الفيديو ${sizeMb.toFixed(1)}MB أكبر من حد الرفع — ارفعه يدوياً من المسار:\n\`${outFile}\``,
+        content: `<@${interaction.user.id}> ${L.recPosted(args.title, durStr)}\n\n${L.recFileTooLarge(parseFloat(sizeMb.toFixed(1)))}\n\`${outFile}\``,
         embeds: [
           buildEmbed({
             title: args.title,
-            description: `الأشخاص: ${users.length} • المدة: ${L.formatDuration(args.durationSec)}`,
+            description: `${L.recPeople(users.length)} • ${durStr}`,
             color: Palette.warn,
           }),
         ],
@@ -270,7 +350,7 @@ async function finalizeAndPost(
   } catch (err) {
     log.error({ err }, "post failed");
     await thread.send({
-      embeds: [errorEmbed("صار خطأ في إرسال الفيديو، تحقق من السجلات.")],
+      embeds: [errorEmbed(L.recRenderFailed)],
     });
   }
 }
@@ -290,11 +370,15 @@ async function resolveTargetChannel(
   return null;
 }
 
-async function refreshPanelMessage(interaction: ButtonInteraction): Promise<void> {
+async function refreshPanelMessage(interaction: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
   if (!interaction.message) return;
+  const guildId = interaction.guildId!;
+  const session = recordingManager.get(guildId);
+  const isActive = recordingManager.isActive(guildId);
+  const isPaused = session?.paused ?? false;
   try {
     await interaction.message.edit({
-      components: [recordPanelRow(recordingManager.isActive(interaction.guildId!))],
+      components: recordPanelRows(isActive, isPaused),
     });
   } catch {
     /* ignore */

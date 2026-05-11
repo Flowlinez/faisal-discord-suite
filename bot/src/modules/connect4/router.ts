@@ -145,16 +145,17 @@ function boardToString(game: C4Game): string {
 }
 
 function columnButtons(game: C4Game): ActionRowBuilder<ButtonBuilder>[] {
-  const row = new ActionRowBuilder<ButtonBuilder>();
+  const row1 = new ActionRowBuilder<ButtonBuilder>();
+  const row2 = new ActionRowBuilder<ButtonBuilder>();
   for (let c = 0; c < 7; c++) {
     const full = game.board[0]![c] !== null;
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(`${IDS.c4.col}:${game.id}:${c}`)
-        .setStyle(game.turn === "R" ? ButtonStyle.Danger : ButtonStyle.Primary)
-        .setLabel(`${c + 1}`)
-        .setDisabled(full)
-    );
+    const btn = new ButtonBuilder()
+      .setCustomId(`${IDS.c4.col}:${game.id}:${c}`)
+      .setStyle(game.turn === "R" ? ButtonStyle.Danger : ButtonStyle.Primary)
+      .setLabel(`${c + 1}`)
+      .setDisabled(full);
+    if (c < 4) row1.addComponents(btn);
+    else row2.addComponents(btn);
   }
-  return [row];
+  return [row1, row2];
 }

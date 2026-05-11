@@ -7,6 +7,7 @@ import {
 import type { SlashCommand } from "../client.js";
 import { recordingManager } from "../modules/recorder/state.js";
 import { errorEmbed, successEmbed } from "../ui/embeds.js";
+import { L } from "../utils/locale.js";
 
 export const clipCommand: SlashCommand = {
   data: new SlashCommandBuilder()
@@ -27,15 +28,14 @@ export const clipCommand: SlashCommand = {
     const session = recordingManager.get(interaction.guild.id);
     if (!session) {
       await interaction.reply({
-        embeds: [errorEmbed("ابدأ التسجيل أولاً | Start recording first (`/record start`).")],
+        embeds: [errorEmbed(L.recNoActiveClip)],
         flags: MessageFlags.Ephemeral,
       });
       return;
     }
     await interaction.reply({
-      embeds: [successEmbed(`جارٍ تجهيز كليب آخر ${minutes} دقيقة | Preparing clip of last ${minutes} min — use the panel button for a full thread export ✨`)],
+      embeds: [successEmbed(L.recPreparingClip(minutes))],
       flags: MessageFlags.Ephemeral,
     });
-    // Note: For a clean implementation, button paths produce the thread + render.
   },
 };

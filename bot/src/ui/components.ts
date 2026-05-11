@@ -15,51 +15,69 @@ import { L } from "../utils/locale.js";
 
 // ── Recording Panel ────────────────────────────────────────
 
-export function recordPanelRow(isRecording: boolean): ActionRowBuilder<ButtonBuilder> {
-  const row = new ActionRowBuilder<ButtonBuilder>();
+export function recordPanelRows(
+  isRecording: boolean,
+  isPaused = false
+): ActionRowBuilder<ButtonBuilder | StringSelectMenuBuilder>[] {
   if (isRecording) {
-    row.addComponents(
+    const controlRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(IDS.record.stop)
         .setStyle(ButtonStyle.Danger)
         .setLabel(L.recStop)
         .setEmoji("⏹️"),
-      new ButtonBuilder()
-        .setCustomId(IDS.record.clip5)
-        .setStyle(ButtonStyle.Primary)
-        .setLabel(L.clipLast(5))
-        .setEmoji("✂️"),
-      new ButtonBuilder()
-        .setCustomId(IDS.record.clip10)
-        .setStyle(ButtonStyle.Primary)
-        .setLabel(L.clipLast(10))
-        .setEmoji("✂️"),
-      new ButtonBuilder()
-        .setCustomId(IDS.record.clip30)
-        .setStyle(ButtonStyle.Primary)
-        .setLabel(L.clipLast(30))
-        .setEmoji("✂️")
-    );
-  } else {
-    row.addComponents(
-      new ButtonBuilder()
-        .setCustomId(IDS.record.start)
-        .setStyle(ButtonStyle.Success)
-        .setLabel(L.recStart)
-        .setEmoji("🔴"),
-      new ButtonBuilder()
-        .setCustomId(IDS.record.clip5)
-        .setStyle(ButtonStyle.Secondary)
-        .setLabel(L.clipLast(5))
-        .setEmoji("✂️"),
+      isPaused
+        ? new ButtonBuilder()
+            .setCustomId(IDS.record.resume)
+            .setStyle(ButtonStyle.Success)
+            .setLabel(L.recResume)
+            .setEmoji("▶️")
+        : new ButtonBuilder()
+            .setCustomId(IDS.record.pause)
+            .setStyle(ButtonStyle.Secondary)
+            .setLabel(L.recPause)
+            .setEmoji("⏸️"),
       new ButtonBuilder()
         .setCustomId(IDS.record.openSettings)
         .setStyle(ButtonStyle.Secondary)
         .setLabel(L.recSettings)
         .setEmoji("⚙️")
     );
+    const clipRow = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(IDS.record.clipSelect)
+        .setPlaceholder(L.clipSelect)
+        .addOptions(
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 1 دقيقة | 1 min").setValue("1").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 2 دقيقة | 2 min").setValue("2").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 3 دقايق | 3 min").setValue("3").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 5 دقايق | 5 min").setValue("5").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 10 دقايق | 10 min").setValue("10").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 15 دقيقة | 15 min").setValue("15").setEmoji("✂️"),
+          new StringSelectMenuOptionBuilder().setLabel("✂️ 30 دقيقة | 30 min").setValue("30").setEmoji("✂️")
+        )
+    );
+    return [controlRow, clipRow];
   }
-  return row;
+
+  const startRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(IDS.record.start)
+      .setStyle(ButtonStyle.Success)
+      .setLabel(L.recStart)
+      .setEmoji("🔴"),
+    new ButtonBuilder()
+      .setCustomId(IDS.record.openSettings)
+      .setStyle(ButtonStyle.Secondary)
+      .setLabel(L.recSettings)
+      .setEmoji("⚙️")
+  );
+  return [startRow];
+}
+
+/** @deprecated Use recordPanelRows instead */
+export function recordPanelRow(isRecording: boolean): ActionRowBuilder<ButtonBuilder> {
+  return recordPanelRows(isRecording)[0] as ActionRowBuilder<ButtonBuilder>;
 }
 
 // ── Setup Panel ────────────────────────────────────────────

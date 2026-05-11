@@ -17,7 +17,7 @@ const DEFAULTS = {
   auto_pin: 1,
   auto_region: 1,
   max_buffer_minutes: 30,
-  render_quality: "medium" as const,
+  render_quality: "high" as const,
 };
 
 export function getGuildSettings(guildId: string): GuildSettings {

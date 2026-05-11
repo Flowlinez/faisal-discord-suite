@@ -6,7 +6,7 @@ import {
 } from "discord.js";
 import type { SlashCommand } from "../client.js";
 import { recordingManager } from "../modules/recorder/state.js";
-import { recordPanelRow } from "../ui/components.js";
+import { recordPanelRows } from "../ui/components.js";
 import { buildEmbed, errorEmbed, successEmbed } from "../ui/embeds.js";
 import { getGuildSettings } from "../db/settings.js";
 import { Palette } from "../utils/colors.js";
@@ -23,6 +23,8 @@ export const recordCommand: SlashCommand = {
     )
     .addSubcommand((s) => s.setName("start").setDescription("بدء التسجيل | Start recording"))
     .addSubcommand((s) => s.setName("stop").setDescription("إيقاف التسجيل | Stop recording"))
+    .addSubcommand((s) => s.setName("pause").setDescription("إيقاف مؤقت | Pause recording"))
+    .addSubcommand((s) => s.setName("resume").setDescription("استمرار التسجيل | Resume recording"))
     .addSubcommand((s) =>
       s.setName("status").setDescription("حالة التسجيل | Recording status")
     ),
@@ -33,6 +35,8 @@ export const recordCommand: SlashCommand = {
 
     if (sub === "panel") {
       const isRec = recordingManager.isActive(interaction.guild.id);
+      const session = recordingManager.get(interaction.guild.id);
+      const qualityLabel = settings.render_quality === "high" ? "1080p" : settings.render_quality === "medium" ? "720p" : "480p";
       await interaction.reply({
         embeds: [
           buildEmbed({
@@ -41,12 +45,13 @@ export const recordCommand: SlashCommand = {
               `**القناة | Channel:** ${settings.pin_channel_id ? `<#${settings.pin_channel_id}>` : "غير محدد | Not set"}`,
               `**المدة | Duration:** ${settings.default_duration_minutes} دقيقة | min`,
               `**البافر | Buffer:** ${settings.max_buffer_minutes} دقيقة | min`,
-              `**الجودة | Quality:** ${settings.render_quality}`,
-            ].join("\n"),
-            color: Palette.accent,
+              `**الجودة | Quality:** ${qualityLabel}`,
+              isRec && session ? `\n🔴 **${L.recording}** — ${L.formatDuration(Math.floor((Date.now() - session.startedAt) / 1000))}` : "",
+            ].filter(Boolean).join("\n"),
+            color: isRec ? Palette.danger : Palette.accent,
           }),
         ],
-        components: [recordPanelRow(isRec)],
+        components: recordPanelRows(isRec, session?.paused),
       });
       return;
     }
@@ -61,17 +66,20 @@ export const recordCommand: SlashCommand = {
         return;
       }
       const secs = Math.floor((Date.now() - s.startedAt) / 1000);
+      const effectiveSecs = recordingManager.effectiveDuration(interaction.guild.id);
       await interaction.reply({
         embeds: [
           buildEmbed({
             title: `🎙️ ${L.recStatus}`,
             description: [
               `**الروم | Channel:** <#${s.channelId}>`,
-              `**المدة | Duration:** ${L.formatDuration(secs)}`,
+              `**المدة الإجمالية | Total:** ${L.formatDuration(secs)}`,
+              `**المدة الفعلية | Effective:** ${L.formatDuration(effectiveSecs)}`,
               `**المشاركون | Participants:** ${s.buffer.listUsers().length}`,
               `**بدأ بواسطة | Started by:** <@${s.startedBy}>`,
-            ].join("\n"),
-            color: Palette.success,
+              s.paused ? `\n⏸️ **${L.recPaused}**` : "",
+            ].filter(Boolean).join("\n"),
+            color: s.paused ? Palette.warn : Palette.success,
           }),
         ],
         flags: MessageFlags.Ephemeral,
@@ -115,12 +123,31 @@ export const recordCommand: SlashCommand = {
         await interaction.editReply({ embeds: [errorEmbed(L.notRecording)] });
         return;
       }
+      const dur = L.formatDuration(Math.floor((Date.now() - stopped.startedAt) / 1000));
       await interaction.editReply({
         embeds: [
           successEmbed(
-            "تم إيقاف التسجيل — استخدم اللوحة لإرسال كليب أو نسخة كاملة\nRecording stopped — use the panel to export a clip or full copy."
+            `تم إيقاف التسجيل — المدة: ${dur}\nRecording stopped — duration: ${dur}`
           ),
         ],
+      });
+      return;
+    }
+
+    if (sub === "pause") {
+      const ok = recordingManager.pause(interaction.guild.id);
+      await interaction.reply({
+        embeds: [ok ? successEmbed(L.recPaused) : errorEmbed(L.recAlreadyPaused)],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    if (sub === "resume") {
+      const ok = recordingManager.resume(interaction.guild.id);
+      await interaction.reply({
+        embeds: [ok ? successEmbed(L.recResumed) : errorEmbed(L.recNotPaused)],
+        flags: MessageFlags.Ephemeral,
       });
       return;
     }

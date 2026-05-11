@@ -60,14 +60,14 @@ async function joinBtn(interaction: ButtonInteraction, lobbyId: string): Promise
   }
 
   const member1 = await interaction.guild!.members.fetch(lobby.hostId);
-  const member2 = interaction.member!;
+  const member2 = await interaction.guild!.members.fetch(interaction.user.id);
 
   const game = createRPSGame({
     lobbyId: lobby.id,
     guildId: lobby.guildId,
     channelId: lobby.channelId,
     player1: { userId: member1.id, name: member1.displayName },
-    player2: { userId: member2.user.id, name: member2.user.username },
+    player2: { userId: member2.id, name: member2.displayName },
     rounds: lobby.rounds,
   });
   destroyRPSLobby(lobbyId);

@@ -20,6 +20,7 @@ import { renderRecording } from "./renderer.js";
 import { getGuildSettings } from "../../db/settings.js";
 import { logger } from "../../utils/logger.js";
 import { errorEmbed, successEmbed } from "../../ui/embeds.js";
+import { L } from "../../utils/locale.js";
 
 const log = logger.child({ mod: "editor" });
 
@@ -32,7 +33,7 @@ function rows(clipId: string) {
   const users = clip?.users ?? [];
   const userSelect = new StringSelectMenuBuilder()
     .setCustomId(`${IDS.editor.userToggle}:${clipId}`)
-    .setPlaceholder("اختر شخص لتبديل الميوت في النسخة المعدّلة")
+    .setPlaceholder(L.edMuteSelect)
     .setMinValues(0)
     .setMaxValues(Math.max(1, Math.min(users.length, 25)))
     .addOptions(
@@ -46,23 +47,23 @@ function rows(clipId: string) {
     new ButtonBuilder()
       .setCustomId(`${IDS.editor.trimStart}:${clipId}`)
       .setStyle(ButtonStyle.Primary)
-      .setLabel("قص من البداية"),
+      .setLabel(L.edTrimStart),
     new ButtonBuilder()
       .setCustomId(`${IDS.editor.trimEnd}:${clipId}`)
       .setStyle(ButtonStyle.Primary)
-      .setLabel("قص من النهاية"),
+      .setLabel(L.edTrimEnd),
     new ButtonBuilder()
       .setCustomId(`${IDS.editor.userVolume}:${clipId}`)
       .setStyle(ButtonStyle.Secondary)
-      .setLabel("صوت شخص"),
+      .setLabel(L.edUserVolume),
     new ButtonBuilder()
       .setCustomId(`${IDS.editor.shareVolume}:${clipId}`)
       .setStyle(ButtonStyle.Secondary)
-      .setLabel("صوت الشير"),
+      .setLabel(L.edShareVolume),
     new ButtonBuilder()
       .setCustomId(`${IDS.editor.render}:${clipId}`)
       .setStyle(ButtonStyle.Success)
-      .setLabel("نسخة معدّلة 🎬")
+      .setLabel(L.edRender)
   );
 
   if (users.length === 0) {
@@ -111,7 +112,7 @@ export async function editorRouter(interaction: Interaction): Promise<void> {
   if (!clip) {
     if (interaction.isRepliable()) {
       await interaction.reply({
-        embeds: [errorEmbed("الكليب غير موجود في الذاكرة، البوت احتمال أُعيد تشغيله.")],
+        embeds: [errorEmbed(L.edClipNotFound)],
         flags: MessageFlags.Ephemeral,
       });
     }
@@ -157,7 +158,9 @@ async function userToggle(
   await interaction.reply({
     embeds: [
       successEmbed(
-        `الميوتد في النسخة المعدّلة: ${selected.size === 0 ? "لا أحد" : `${selected.size} شخص`}`
+        selected.size === 0
+          ? "لا أحد مكتوم | No one muted"
+          : `${selected.size} شخص مكتوم | ${selected.size} user(s) muted`
       ),
     ],
     flags: MessageFlags.Ephemeral,
@@ -173,12 +176,12 @@ async function showTrimModal(
   const customId = `edit:${kind === "start" ? "trim_start" : "trim_end"}:${clipId}|modal`;
   const modal = new ModalBuilder()
     .setCustomId(customId)
-    .setTitle(kind === "start" ? "قص من البداية" : "قص من النهاية")
+    .setTitle(kind === "start" ? L.edTrimStart : L.edTrimEnd)
     .addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("seconds")
-          .setLabel("عدد الثواني")
+          .setLabel("عدد الثواني | Seconds")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setPlaceholder("مثال: 15")
@@ -193,19 +196,19 @@ async function showVolumeModal(
 ): Promise<void> {
   const modal = new ModalBuilder()
     .setCustomId(`edit:user_volume:${clipId}|modal`)
-    .setTitle("تعديل صوت شخص")
+    .setTitle(L.edUserVolume)
     .addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("user_id")
-          .setLabel("معرّف الشخص (User ID)")
+          .setLabel("معرّف الشخص | User ID")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
       ),
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("volume")
-          .setLabel("النسبة (0.0 - 2.0)، 1.0 = طبيعي")
+          .setLabel("النسبة | Volume (0.0 - 2.0)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setPlaceholder("1.0")
@@ -220,12 +223,12 @@ async function showShareVolumeModal(
 ): Promise<void> {
   const modal = new ModalBuilder()
     .setCustomId(`edit:share_volume:${clipId}|modal`)
-    .setTitle("تعديل صوت الشير")
+    .setTitle(L.edShareVolume)
     .addComponents(
       new ActionRowBuilder<TextInputBuilder>().addComponents(
         new TextInputBuilder()
           .setCustomId("volume")
-          .setLabel("النسبة (0.0 - 2.0)")
+          .setLabel("النسبة | Volume (0.0 - 2.0)")
           .setStyle(TextInputStyle.Short)
           .setRequired(true)
           .setPlaceholder("1.0")
@@ -258,7 +261,7 @@ async function handleModalSubmit(
     if (Number.isFinite(v) && v >= 0 && v <= 3) state.shareVolume = v;
   }
   await interaction.reply({
-    embeds: [successEmbed("تم تحديث إعدادات التعديل — اضغط 'نسخة معدّلة' لتركيب الفيديو.")],
+    embeds: [successEmbed(L.edUpdated)],
     flags: MessageFlags.Ephemeral,
   });
   void sub;
@@ -313,11 +316,11 @@ async function renderEdited(
         perUser,
         shareVolume: state.shareVolume,
       },
-      title: "نسخة معدّلة",
+      title: "نسخة معدّلة | Edited version",
     });
   } catch (err) {
     log.error({ err }, "edit render failed");
-    await interaction.editReply({ embeds: [errorEmbed("فشل تركيب النسخة المعدّلة.")] });
+    await interaction.editReply({ embeds: [errorEmbed(L.edRenderFailed)] });
     return;
   }
 
@@ -326,14 +329,14 @@ async function renderEdited(
     const stat = fs.statSync(outFile);
     if (stat.size / (1024 * 1024) < 24) {
       await interaction.editReply({
-        embeds: [successEmbed("جاهز ✅")],
+        embeds: [successEmbed(L.edReady)],
         files: [outFile],
       });
     } else {
       await interaction.editReply({
         embeds: [
           successEmbed(
-            `الفيديو جاهز لكن حجمه ${(stat.size / 1024 / 1024).toFixed(1)}MB — موجود في:\n\`${outFile}\``
+            `${L.recFileTooLarge(parseFloat((stat.size / 1024 / 1024).toFixed(1)))}\n\`${outFile}\``
           ),
         ],
       });

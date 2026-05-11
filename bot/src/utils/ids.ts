@@ -15,10 +15,13 @@ export const IDS = {
   record: {
     start: "rec:start",
     stop: "rec:stop",
+    pause: "rec:pause",
+    resume: "rec:resume",
     clip5: "rec:clip:5",
     clip10: "rec:clip:10",
     clip30: "rec:clip:30",
     clipCustom: "rec:clip:custom",
+    clipSelect: "rec:clip_select",
     openSettings: "rec:open_settings",
   },
   editor: {
