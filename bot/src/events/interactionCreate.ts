@@ -63,11 +63,15 @@ export async function onInteractionCreate(interaction: Interaction): Promise<voi
     }
   } catch (err) {
     logger.error({ err }, "interaction error");
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+    if (interaction.isRepliable()) {
       try {
-        await interaction.reply({ content: L.unknownError, flags: MessageFlags.Ephemeral });
+        if (interaction.deferred && !interaction.replied) {
+          await interaction.editReply({ content: L.unknownError });
+        } else if (!interaction.replied) {
+          await interaction.reply({ content: L.unknownError, flags: MessageFlags.Ephemeral });
+        }
       } catch {
-        /* ignore */
+        /* ignore — interaction may have expired */
       }
     }
   }

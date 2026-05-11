@@ -29,12 +29,13 @@ export const soundboardCommand: SlashCommand = {
     const sub = interaction.options.getSubcommand(true);
     if (sub === "record") {
       const target = interaction.options.getUser("user", true);
+      // Defer immediately — joining voice channel can take several seconds
+      await interaction.deferReply();
       const member = await interaction.guild.members.fetch(target.id);
       const channel = member.voice.channel;
       if (!channel) {
-        await interaction.reply({
-          embeds: [errorEmbed("الشخص مو موجود في روم صوتي.")],
-          flags: MessageFlags.Ephemeral,
+        await interaction.editReply({
+          embeds: [errorEmbed("الشخص مو موجود في روم صوتي | User is not in a voice channel.")],
         });
         return;
       }
@@ -44,19 +45,18 @@ export const soundboardCommand: SlashCommand = {
           authorId: interaction.user.id,
           targetUserId: target.id,
         });
-        await interaction.reply({
+        await interaction.editReply({
           embeds: [
             successEmbed(
-              `بدأ تسجيل ${target.username} لمدة أقصاها 5 ثواني. اضغط إيقاف للحفظ والمعاينة.`
+              `بدأ تسجيل ${target.username} لمدة أقصاها 5 ثواني. اضغط إيقاف للحفظ والمعاينة.\nRecording ${target.username} for up to 5 seconds. Press stop to save.`
             ),
           ],
           components: [soundboardRecordingPanel()],
         });
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "خطأ غير متوقع";
-        await interaction.reply({
+        const msg = err instanceof Error ? err.message : "خطأ غير متوقع | Unexpected error";
+        await interaction.editReply({
           embeds: [errorEmbed(msg)],
-          flags: MessageFlags.Ephemeral,
         });
       }
       return;
