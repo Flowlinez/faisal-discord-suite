@@ -102,20 +102,35 @@ async function startBtn(interaction: ButtonInteraction): Promise<void> {
 async function stopBtn(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild) return;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  // Extract buffer data BEFORE stopping (stop() closes FDs and deletes session)
+  const liveSession = recordingManager.get(interaction.guild.id);
+  if (!liveSession) {
+    await interaction.editReply({ embeds: [errorEmbed(L.notRecording)] });
+    return;
+  }
+  const durationSec = Math.floor((Date.now() - liveSession.startedAt) / 1000);
+  const users = liveSession.buffer.sliceLastSeconds(durationSec, liveSession.sessionDir);
+  const events = liveSession.timeline.sliceEvents(0, durationSec * 1000);
+  const chat = liveSession.timeline.sliceChat(0, durationSec * 1000);
+  const sessionId = liveSession.id;
+  const sessionDir = liveSession.sessionDir;
+
   const session = await recordingManager.stop(interaction.guild.id);
   if (!session) {
     await interaction.editReply({ embeds: [errorEmbed(L.notRecording)] });
     return;
   }
-  const dur = L.formatDuration(Math.floor((Date.now() - session.startedAt) / 1000));
+  const dur = L.formatDuration(durationSec);
   await interaction.editReply({
     embeds: [successEmbed(`تم إيقاف التسجيل — المدة: ${dur}\nRecording stopped — duration: ${dur}`)],
   });
   await finalizeAndPost(interaction, {
-    sessionId: session.id,
-    durationSec: Math.floor((Date.now() - session.startedAt) / 1000),
-    sliceDir: session.sessionDir,
+    sessionId,
+    durationSec,
+    sliceDir: sessionDir,
     title: `تسجيل | Recording — ${new Date().toLocaleString("ar-SA")}`,
+    presliced: { users, events, chat },
   });
   try {
     await refreshPanelMessage(interaction);
@@ -126,6 +141,11 @@ async function stopBtn(interaction: ButtonInteraction): Promise<void> {
 
 async function pauseBtn(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild) return;
+  const session = recordingManager.get(interaction.guild.id);
+  if (!session) {
+    await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+    return;
+  }
   const ok = recordingManager.pause(interaction.guild.id);
   if (!ok) {
     await interaction.reply({
@@ -147,6 +167,11 @@ async function pauseBtn(interaction: ButtonInteraction): Promise<void> {
 
 async function resumeBtn(interaction: ButtonInteraction): Promise<void> {
   if (!interaction.guild) return;
+  const session = recordingManager.get(interaction.guild.id);
+  if (!session) {
+    await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+    return;
+  }
   const ok = recordingManager.resume(interaction.guild.id);
   if (!ok) {
     await interaction.reply({

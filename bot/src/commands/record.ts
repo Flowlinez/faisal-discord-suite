@@ -135,6 +135,11 @@ export const recordCommand: SlashCommand = {
     }
 
     if (sub === "pause") {
+      const session = recordingManager.get(interaction.guild.id);
+      if (!session) {
+        await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+        return;
+      }
       const ok = recordingManager.pause(interaction.guild.id);
       await interaction.reply({
         embeds: [ok ? successEmbed(L.recPaused) : errorEmbed(L.recAlreadyPaused)],
@@ -144,6 +149,11 @@ export const recordCommand: SlashCommand = {
     }
 
     if (sub === "resume") {
+      const session = recordingManager.get(interaction.guild.id);
+      if (!session) {
+        await interaction.reply({ embeds: [errorEmbed(L.notRecording)], flags: MessageFlags.Ephemeral });
+        return;
+      }
       const ok = recordingManager.resume(interaction.guild.id);
       await interaction.reply({
         embeds: [ok ? successEmbed(L.recResumed) : errorEmbed(L.recNotPaused)],
